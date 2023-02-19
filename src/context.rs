@@ -1,3 +1,5 @@
+use crate::device::*;
+
 use anyhow::{Result, Context as _};
 
 use ash::{
@@ -21,41 +23,52 @@ use std::{
 
 
 #[cfg(debug_assertions)]
-type ValidationCallback = unsafe extern "system" fn(MessageSeverity, MessageType, *const MessageData, *mut c_void) -> vk::Bool32;
-
-#[cfg(debug_assertions)]
-#[inline]
-unsafe extern "system" fn default_validation_callback(
+unsafe extern "system" fn debug_utils_messenger_callback(
     message_severity: MessageSeverity,
     message_type: MessageType,
     p_message_data: *const MessageData,
     _p_user_data: *mut c_void
 ) -> vk::Bool32 {
-    #[cfg(debug_assertions)]
-    {
-        let mut exit = false;
+    let info = std::ptr::NonNull::new(_p_user_data as *mut ContextInfo).unwrap().as_ref();
+    let message = CStr::from_ptr((*p_message_data).p_message);
 
-        let severity = match message_severity {
-            MessageSeverity::VERBOSE => "[Verbose]",
-            MessageSeverity::INFO => "[Info]",
-            MessageSeverity::WARNING => { exit = true; "[Warning]" },
-            MessageSeverity::ERROR => { exit = true; "[Error]" },
-            _ => "[Unknown]",
-        };
-        let types = match message_type {
-            MessageType::GENERAL => "[General]",
-            MessageType::PERFORMANCE => "[Performance]",
-            MessageType::VALIDATION => "[Validation]",
-            _ => "[Unknown]",
-        };
-        let message = CStr::from_ptr((*p_message_data).p_message);
+    let validation_callback = info.validation_callback;
+    validation_callback(message_severity, message_type, message);
 
-        println!("{}{}\n{:?}\n", severity, types, message);
-        debug_assert!(exit, "DAXA DEBUG ASSERTION FAILURE");
-
-        vk::FALSE
-    }
+    vk::FALSE
 }
+
+#[cfg(debug_assertions)]
+type ValidationCallback = fn(MessageSeverity, MessageType, &CStr);
+
+#[cfg(debug_assertions)]
+#[inline]
+fn default_validation_callback(
+    message_severity: MessageSeverity,
+    message_type: MessageType,
+    message: &CStr,
+) {
+    let mut exit = false;
+
+    let severity = match message_severity {
+        MessageSeverity::VERBOSE => "[Verbose]",
+        MessageSeverity::INFO => "[Info]",
+        MessageSeverity::WARNING => { exit = true; "[Warning]" },
+        MessageSeverity::ERROR => { exit = true; "[Error]" },
+        _ => "[Unknown]",
+    };
+    let types = match message_type {
+        MessageType::GENERAL => "[General]",
+        MessageType::PERFORMANCE => "[Performance]",
+        MessageType::VALIDATION => "[Validation]",
+        _ => "[Unknown]",
+    };
+
+    println!("{}{}\n{:?}\n", severity, types, message);
+    debug_assert!(!exit, "DAXA DEBUG ASSERTION FAILURE");
+}
+
+
 
 pub struct ContextInfo {
     application_name: &'static str,
@@ -65,7 +78,7 @@ pub struct ContextInfo {
 
 impl Default for ContextInfo {
     fn default() -> Self {
-        ContextInfo {
+        Self {
             application_name: "Daxa Vulkan App",
             application_version: 0,
             #[cfg(debug_assertions)] validation_callback: default_validation_callback
@@ -77,11 +90,12 @@ impl Default for ContextInfo {
 
 struct ContextInternal {
     instance: Instance,
+    info: Box<ContextInfo>,
     #[cfg(debug_assertions)] _debug_utils: DebugUtils,
     #[cfg(debug_assertions)] _debug_utils_messenger: DebugUtilsMessenger,
-    #[cfg(debug_assertions)] _enable_debug_names: bool
 }
 
+#[derive(Clone)]
 pub struct Context {
     internal: Arc<ContextInternal>
 }
@@ -99,6 +113,8 @@ impl Context {
         info: ContextInfo
     ) -> Result<Self> {
         let entry = ash::Entry::linked();
+
+        let mut info = Box::new(info);
 
         // Define instance layers and extensions to request
         let layer_names = Vec::from([
@@ -148,6 +164,7 @@ impl Context {
         // Create debug messenger
         #[cfg(debug_assertions)]
         let (_debug_utils, _debug_utils_messenger) = {
+            let user_data = info.as_mut() as *mut ContextInfo as *mut c_void;
             let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
                 .message_severity(
                     vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
@@ -160,8 +177,8 @@ impl Context {
                         | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
                         | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
                 )
-                .pfn_user_callback(Some(info.validation_callback))
-                .build();
+                .pfn_user_callback(Some(debug_utils_messenger_callback))
+                .user_data(user_data);
 
             let debug_utils = DebugUtils::new(&entry, &instance);
             let debug_utils_messenger = unsafe {
@@ -175,11 +192,55 @@ impl Context {
         Ok(Self {
             internal: Arc::new(ContextInternal {
                 instance,
+                info,
                 #[cfg(debug_assertions)] _debug_utils,
                 #[cfg(debug_assertions)] _debug_utils_messenger,
-                #[cfg(debug_assertions)] _enable_debug_names: true
             })
         })
+    }
+
+    pub fn create_device(
+        &self,
+        device_info: DeviceInfo
+    ) -> Result<Device> {
+        // Get physical devices
+        let physical_devices = unsafe {
+            self.enumerate_physical_devices()
+                .context("Physical devices should be enumerated.")?
+        };
+
+        // Score physical devices with provided selector
+        let device_score = |physical_device: &vk::PhysicalDevice| -> i32 {
+            let device_properties = unsafe { self.get_physical_device_properties(*physical_device) };
+
+            match device_properties.api_version < vk::API_VERSION_1_3 {
+                true => 0,
+                false => (device_info.selector)(&device_properties)
+            }
+        };
+
+        let best_physical_device = physical_devices
+            .iter()
+            .max_by_key(|&a| device_score(a))
+            .expect("`physical_devices` should not be empty");
+
+        debug_assert!(device_score(best_physical_device) != -1, "No suitable device found.");
+
+        // TODO: check every physical device for required features
+
+        // Create logical device from selected physical device
+        let physical_device = *best_physical_device;
+        let device_properties = unsafe { self.get_physical_device_properties(physical_device) };
+
+        let logical_device = Device::new(device_info, device_properties, self.clone(), physical_device)
+            .expect("Device should be created");
+
+        Ok(logical_device)
+    }
+
+    #[inline]
+    pub(crate) fn debug_utils(&self) -> &DebugUtils {
+        &self.internal._debug_utils
     }
 }
 
@@ -212,7 +273,7 @@ impl Drop for ContextInternal {
 
 #[cfg(test)]
 mod tests {
-    use super::{Context, ContextInfo, MessageSeverity, MessageType, MessageData};
+    use super::{Context, ContextInfo, MessageSeverity, MessageType};
 
     #[test]
     fn simplest() {
@@ -222,17 +283,12 @@ mod tests {
 
     #[test]
     fn custom_validation_callback() {
-        unsafe extern "system" fn validation_callback(
+        fn validation_callback(
             _message_severity: MessageSeverity,
             _message_type: MessageType,
-            p_message_data: *const MessageData,
-            _p_user_data: *mut std::ffi::c_void
-        ) -> ash::vk::Bool32 {
-            let message = std::ffi::CStr::from_ptr((*p_message_data).p_message);
-        
+            message: &std::ffi::CStr,
+        ) {
             println!("{:?}\n", message);
-        
-            ash::vk::FALSE
         }
 
         let _daxa_context = Context::new(ContextInfo {
