@@ -1,24 +1,19 @@
-use crate::context::Context;
+use crate::{command_list::*, context::Context, gpu_resources::*, semaphore::*};
 
-use anyhow::{Result, Context as _};
+use anyhow::{Context as _, Result};
 
 use ash::{
     Device as LogicalDevice,
-    vk::{
-        self,
-        PhysicalDevice,
-    }
+    extensions::ext::DebugUtils,
+    vk::{self, PhysicalDevice}
 };
 
 use gpu_allocator::{vulkan::*, AllocatorDebugSettings, MemoryLocation};
 
 use std::{
     collections::VecDeque,
-    ffi::{
-        CStr,
-        CString
-    },
-    ops::Deref,
+    ffi::{CStr},
+    ops::{Deref},
     mem::{
         ManuallyDrop,
         size_of
@@ -27,7 +22,8 @@ use std::{
     sync::{
         Arc,
         atomic::{
-            AtomicU64
+            AtomicU64,
+            Ordering
         },
         Mutex
     },
@@ -73,13 +69,14 @@ impl Default for DeviceInfo {
     }
 }
 
+#[derive(Default)]
 pub struct CommandSubmitInfo {
-    src_stage: PipelineStageFlags,
-    // commands_lists: Vec<CommandList>, // TODO
-    // wait_binary_semaphores: Vec<BinarySemaphore>,
-    // signal_binary_semaphores: Vec<BinarySemaphore>,
-    // wait_timeline_semaphores: Vec<(TimelineSemaphore, u64)>,
-    // signal_timeline_semaphores: Vec<(TimelineSemaphore, u64)>,
+    pub src_stages: PipelineStageFlags,
+    pub command_lists: Vec<CommandList>,
+    pub wait_binary_semaphores: Vec<BinarySemaphore>,
+    pub signal_binary_semaphores: Vec<BinarySemaphore>,
+    pub wait_timeline_semaphores: Vec<(TimelineSemaphore, u64)>,
+    pub signal_timeline_semaphores: Vec<(TimelineSemaphore, u64)>,
 }
 
 pub struct PresentInfo {
@@ -89,7 +86,22 @@ pub struct PresentInfo {
 
 
 
-struct DeviceInternal {
+pub trait Zombie { }
+
+#[derive(Default)]
+pub(crate) struct MainQueueZombies {
+    pub command_lists: VecDeque<(u64, CommandListZombie)>,
+    pub buffers: VecDeque<(u64, BufferId)>,
+    pub images: VecDeque<(u64, ImageId)>,
+    pub image_views: VecDeque<(u64, ImageViewId)>,
+    pub samplers: VecDeque<(u64, SamplerId)>,
+    pub semaphores: VecDeque<(u64, SemaphoreZombie)>,
+    // split_barriers: VecDeque<(u64, SplitBarrierZombie)>, // TODO
+    // pipelines: VecDeque<(u64, PipelineZombie)>,
+    // timeline_query_pools: VecDeque<(u64, TimelineQueryPoolZombie)>,
+}
+
+pub(crate) struct DeviceInternal {
     context: Context,
     properties: DeviceProperties,
     info: DeviceInfo,
@@ -101,8 +113,8 @@ struct DeviceInternal {
 
     // Main queue
     main_queue: vk::Queue,
-    main_queue_family: u32,
-    main_queue_cpu_timeline: AtomicU64,
+    pub main_queue_family: u32,
+    pub main_queue_cpu_timeline: AtomicU64,
     main_queue_gpu_timeline_semaphore: vk::Semaphore,
 
     // GPU resource table
@@ -113,29 +125,15 @@ struct DeviceInternal {
     buffer_device_address_buffer_allocation: Box<Allocation>,
 
     // Resource recycling
-    // #[cfg(threat_safety)] // TODO
-    // command_buffer_pool_pool: Mutex<CommandBufferPoolPool>,
-    // #[cfg(not(threat_safety))]
-    // command_buffer_pool_pool: CommandBufferPoolPool,
+    command_buffer_pool_pool: Mutex<CommandBufferPoolPool>,
     
-    // #[cfg(thread_safety)]
-    // main_queue_submits_zombies: Mutex<VecDeque<(u64, Vec<CommandList>)>>, // TODO
-    // #[cfg(not(thread_safety))]
-    // main_queue_submits_zombies: VecDeque<(u64, Vec<CommandList>)>,
-    // main_queue_command_list_zombies: VecDeque<(u64, CommandListZombie)>,
-    // main_queue_buffer_zombies: VecDeque<(u64, BufferId)>,
-    // main_queue_image_zombies: VecDeque<(u64, ImageId)>,
-    // main_queue_image_view_zombies: VecDeque<(u64, ImageViewId)>,
-    // main_queue_sampler_zombies: VecDeque<(u64, SamplerId)>,
-    // main_queue_semaphore_zombies: VecDeque<(u64, SemaphoreZombie)>,
-    // main_queue_split_barrier_zombies: VecDeque<(u64, SplitBarrierZombie)>,
-    // main_queue_pipeline_zombies: VecDeque<(u64, PipelineZombie)>,
-    // main_queue_timeline_query_pool_zombies: VecDeque<(u64, TimelineQueryPoolZombie)>,
+    pub main_queue_submits: Mutex<VecDeque<(u64, Vec<CommandList>)>>,
+    pub main_queue_zombies: Mutex<MainQueueZombies>,
 }
 
 #[derive(Clone)]
 pub struct Device {
-    internal: Arc<DeviceInternal>
+    pub(crate) internal: Arc<DeviceInternal>
 }
 
 impl Deref for Device {
@@ -148,7 +146,7 @@ impl Deref for Device {
 
 // Device creation methods
 impl Device {
-    pub fn new(
+    pub(crate) fn new(
         device_info: DeviceInfo,
         device_properties: DeviceProperties,
         context: Context,
@@ -180,7 +178,7 @@ impl Device {
             .build();
 
         // Define required device features
-        let required_physical_device_features: vk::PhysicalDeviceFeatures = vk::PhysicalDeviceFeatures::builder()
+        let required_physical_device_features = vk::PhysicalDeviceFeatures::builder()
             .image_cube_array(true)
             .multi_draw_indirect(true) // Very useful for GPU driver rendering
             .fill_mode_non_solid(true)
@@ -193,12 +191,12 @@ impl Device {
             .shader_int64(true) // Used for buffer device address math
             .build();
     
-        let mut required_physical_device_features_buffer_device_address: vk::PhysicalDeviceBufferDeviceAddressFeatures = vk::PhysicalDeviceBufferDeviceAddressFeatures::builder()
+        let mut required_physical_device_features_buffer_device_address = vk::PhysicalDeviceBufferDeviceAddressFeatures::builder()
             .buffer_device_address(true)
             .buffer_device_address_capture_replay(true)
             .build();
 
-        let mut required_physical_device_features_descriptor_indexing: vk::PhysicalDeviceDescriptorIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures::builder()
+        let mut required_physical_device_features_descriptor_indexing = vk::PhysicalDeviceDescriptorIndexingFeatures::builder()
             .shader_sampled_image_array_non_uniform_indexing(true) // Needed for bindless sampled images
             .shader_storage_image_array_non_uniform_indexing(true) // Needed for bindless storage images
             .shader_storage_buffer_array_non_uniform_indexing(true) // Needed for bindless buffers
@@ -210,36 +208,36 @@ impl Device {
             .runtime_descriptor_array(true) // Allows bindless table without hardcoded descriptor maximum in shaders
             .build();
 
-        let mut required_physical_device_features_host_query_reset: vk::PhysicalDeviceHostQueryResetFeatures = vk::PhysicalDeviceHostQueryResetFeatures::builder()
+        let mut required_physical_device_features_host_query_reset = vk::PhysicalDeviceHostQueryResetFeatures::builder()
             .host_query_reset(true)
             .build();
 
-        let mut required_physical_device_features_shader_atomic_int64: vk::PhysicalDeviceShaderAtomicInt64Features = vk::PhysicalDeviceShaderAtomicInt64Features::builder()
+        let mut required_physical_device_features_shader_atomic_int64 = vk::PhysicalDeviceShaderAtomicInt64Features::builder()
             .shader_buffer_int64_atomics(true)
             .shader_shared_int64_atomics(true)
             .build();
 
-        let mut required_physical_device_features_shader_image_atomic_int64: vk::PhysicalDeviceShaderImageAtomicInt64FeaturesEXT = vk::PhysicalDeviceShaderImageAtomicInt64FeaturesEXT::builder()
+        let mut required_physical_device_features_shader_image_atomic_int64 = vk::PhysicalDeviceShaderImageAtomicInt64FeaturesEXT::builder()
             .shader_image_int64_atomics(true)
             .build();
 
-        let mut required_physical_device_features_dynamic_rendering: vk::PhysicalDeviceDynamicRenderingFeatures = vk::PhysicalDeviceDynamicRenderingFeatures::builder()
+        let mut required_physical_device_features_dynamic_rendering = vk::PhysicalDeviceDynamicRenderingFeatures::builder()
             .dynamic_rendering(true)
             .build();
 
-        let mut required_physical_device_features_timeline_semaphore: vk::PhysicalDeviceTimelineSemaphoreFeatures = vk::PhysicalDeviceTimelineSemaphoreFeatures::builder()
+        let mut required_physical_device_features_timeline_semaphore = vk::PhysicalDeviceTimelineSemaphoreFeatures::builder()
             .timeline_semaphore(true)
             .build();
 
-        let mut required_physical_device_features_synchronization_2: vk::PhysicalDeviceSynchronization2Features = vk::PhysicalDeviceSynchronization2Features::builder()
+        let mut required_physical_device_features_synchronization_2 = vk::PhysicalDeviceSynchronization2Features::builder()
             .synchronization2(true)
             .build();
 
-        let mut required_physical_device_features_robustness_2: vk::PhysicalDeviceRobustness2FeaturesEXT = vk::PhysicalDeviceRobustness2FeaturesEXT::builder()
+        let mut required_physical_device_features_robustness_2 = vk::PhysicalDeviceRobustness2FeaturesEXT::builder()
             .null_descriptor(true)
             .build();
 
-        let mut required_physical_device_features_scalar_layout: vk::PhysicalDeviceScalarBlockLayoutFeatures = vk::PhysicalDeviceScalarBlockLayoutFeatures::builder()
+        let mut required_physical_device_features_scalar_layout = vk::PhysicalDeviceScalarBlockLayoutFeatures::builder()
             .scalar_block_layout(true)
             .build();
 
@@ -360,7 +358,7 @@ impl Device {
 
         #[cfg(debug_assertions)]
         unsafe {
-            let device_name = format!("{} [Daxa Device]", device_info.debug_name);
+            let device_name = format!("{} [Daxa Device]\0", device_info.debug_name);
             let device_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                 .object_type(vk::ObjectType::DEVICE)
                 .object_handle(vk::Handle::as_raw(logical_device.handle()))
@@ -368,7 +366,7 @@ impl Device {
                 .build();
             context.debug_utils().set_debug_utils_object_name(logical_device.handle(), &device_name_info)?;
 
-            let queue_name = format!("{} [Daxa Device Queue]", device_info.debug_name);
+            let queue_name = format!("{} [Daxa Device Queue]\0", device_info.debug_name);
             let queue_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                 .object_type(vk::ObjectType::QUEUE)
                 .object_handle(vk::Handle::as_raw(main_queue))
@@ -376,7 +374,7 @@ impl Device {
                 .build();
             context.debug_utils().set_debug_utils_object_name(logical_device.handle(), &queue_name_info)?;
 
-            let semaphore_name = format!("{} [Daxa Device TimelineSemaphore]", device_info.debug_name);
+            let semaphore_name = format!("{} [Daxa Device TimelineSemaphore]\0", device_info.debug_name);
             let semaphore_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                 .object_type(vk::ObjectType::SEMAPHORE)
                 .object_handle(vk::Handle::as_raw(main_queue_gpu_timeline_semaphore))
@@ -384,7 +382,7 @@ impl Device {
                 .build();
             context.debug_utils().set_debug_utils_object_name(logical_device.handle(), &semaphore_name_info)?;
 
-            let buffer_name = format!("{} [Daxa Device Buffer Device Address Buffer]", device_info.debug_name);
+            let buffer_name = format!("{} [Daxa Device Buffer Device Address Buffer]\0", device_info.debug_name);
             let buffer_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                 .object_type(vk::ObjectType::BUFFER)
                 .object_handle(vk::Handle::as_raw(buffer_device_address_buffer))
@@ -393,7 +391,7 @@ impl Device {
             context.debug_utils().set_debug_utils_object_name(logical_device.handle(), &buffer_name_info)?;
         }
 
-        Ok(Device {
+        Ok(Self {
             internal: Arc::new(DeviceInternal {
                 context,
                 properties: device_properties,
@@ -412,10 +410,15 @@ impl Device {
             
                 // GPU resource table
                 // gpu_shader_resource_table: GPUShaderResourceTable,
-            
+
                 null_sampler,
                 buffer_device_address_buffer,
                 buffer_device_address_buffer_allocation: Box::new(buffer_device_address_buffer_allocation),
+
+                command_buffer_pool_pool: Default::default(),
+            
+                main_queue_submits: Default::default(),
+                main_queue_zombies: Mutex::new(MainQueueZombies::default()),
             })
         })
     }
@@ -438,17 +441,210 @@ impl Device {
         self.internal.wait_idle();
     }
 
+    pub fn submit_commands(&self, info: CommandSubmitInfo) {
+        self.collect_garbage();
+
+        let timeline_value = self.internal.main_queue_cpu_timeline.fetch_add(1, Ordering::AcqRel) + 1;
+
+        let mut submit: (u64, Vec<CommandList>) = (timeline_value, vec![]);
+
+        let mut main_queue_zombies = self.internal.main_queue_zombies.lock().unwrap();
+        for command_list in info.command_lists.as_slice() {
+            for (id, index) in command_list.internal.deferred_destructions.as_slice() {
+                match *index as usize {
+                    DEFERRED_DESTRUCTION_BUFFER_INDEX => main_queue_zombies.buffers.push_front((timeline_value, BufferId(id.0))),
+                    DEFERRED_DESTRUCTION_IMAGE_INDEX => main_queue_zombies.images.push_front((timeline_value, ImageId(id.0))),
+                    DEFERRED_DESTRUCTION_IMAGE_VIEW_INDEX => main_queue_zombies.image_views.push_front((timeline_value, ImageViewId(id.0))),
+                    DEFERRED_DESTRUCTION_SAMPLER_INDEX => main_queue_zombies.samplers.push_front((timeline_value, SamplerId(id.0))),
+                    _ => ()
+                }
+            }
+        }
+
+        let submit_command_buffers: Vec<vk::CommandBuffer> = info.command_lists.as_slice()
+            .iter()
+            .map(|command_list| {
+                debug_assert!(command_list.internal.recording_complete.load(Ordering::Relaxed), "Command lists must be completed before submission.");
+                submit.1.push(command_list.clone());
+                command_list.internal.command_buffer
+            })
+            .collect();
+
+        // Gather semaphores to signal
+        // Add main queue timeline signaling as first timeline semaphore signaling
+        let mut submit_semaphore_signals = vec![self.internal.main_queue_gpu_timeline_semaphore]; // All timeline semaphores come first, then binary semaphores follow.
+        let mut submit_semaphore_signal_values = vec![timeline_value]; // Used for timeline semaphores. Ignored (push dummy value) for binary semaphores.
+
+        for (timeline_semaphore, signal_value) in info.signal_timeline_semaphores {
+            submit_semaphore_signals.push(timeline_semaphore.internal.semaphore);
+            submit_semaphore_signal_values.push(signal_value);
+        }
+
+        for binary_semaphore in info.signal_binary_semaphores {
+            submit_semaphore_signals.push(binary_semaphore.internal.semaphore);
+            submit_semaphore_signal_values.push(0); // The vulkan spec requires to have dummy values for binary semaphores.
+        }
+
+        // Gather semaphores to wait
+        // Used to synchronize with previous submits
+        let mut submit_semaphore_waits = vec![];
+        let mut submit_semaphore_wait_stage_masks = vec![];
+        let mut submit_semaphore_wait_values = vec![];
+
+        for (timeline_semaphore, wait_value) in info.wait_timeline_semaphores {
+            submit_semaphore_waits.push(timeline_semaphore.internal.semaphore);
+            submit_semaphore_wait_stage_masks.push(vk::PipelineStageFlags::ALL_COMMANDS);
+            submit_semaphore_wait_values.push(wait_value);
+        }
+
+        for binary_semaphore in info.wait_binary_semaphores {
+            submit_semaphore_waits.push(binary_semaphore.internal.semaphore);
+            submit_semaphore_wait_stage_masks.push(vk::PipelineStageFlags::ALL_COMMANDS);
+            submit_semaphore_wait_values.push(0);
+        }
+
+        let mut timeline_info = vk::TimelineSemaphoreSubmitInfo::builder()
+            .wait_semaphore_values(&submit_semaphore_wait_values)
+            .signal_semaphore_values(&submit_semaphore_signal_values)
+            .build();
+
+        let submit_info = vk::SubmitInfo::builder()
+            .push_next(&mut timeline_info)
+            .wait_semaphores(&submit_semaphore_waits)
+            .wait_dst_stage_mask(&submit_semaphore_wait_stage_masks)
+            .command_buffers(&submit_command_buffers)
+            .signal_semaphores(&submit_semaphore_signals)
+            .build();
+        unsafe { self.queue_submit(self.internal.main_queue, slice::from_ref(&submit_info), vk::Fence::null()).unwrap_unchecked() };
+    
+        self.internal.main_queue_submits.lock()
+            .unwrap()
+            .push_front(submit);
+    }
+
+
+
     #[inline]
     pub fn collect_garbage(&self) {
         self.internal.main_queue_collect_garbage();
+    }
+
+
+
+    pub fn create_command_list(&self, info: CommandListInfo) -> Result<CommandList> {
+        let (pool, buffer) = self.internal.command_buffer_pool_pool.lock()
+            .unwrap()
+            .get(self.clone());
+
+        CommandList::new(self.clone(), pool, buffer, info)
+    }
+
+    pub fn create_binary_semaphore(&self, info: BinarySemaphoreInfo) -> Result<BinarySemaphore> {
+        BinarySemaphore::new(self.clone(), info)
+    }
+
+    #[cfg(debug_assertions)]
+    #[inline]
+    pub(crate) fn debug_utils(&self) -> &DebugUtils {
+        &self.internal.context.debug_utils()
     }
 }
 
 // Device internal methods
 impl DeviceInternal {
     fn main_queue_collect_garbage(&self) {
-        // TODO
-        todo!()
+        let gpu_timeline_value = unsafe { self.logical_device.get_semaphore_counter_value(self.main_queue_gpu_timeline_semaphore) };
+        debug_assert_ne!(gpu_timeline_value, Err(vk::Result::ERROR_DEVICE_LOST), "Device lost");
+        let gpu_timeline_value = gpu_timeline_value.unwrap();
+
+
+        fn check_and_cleanup_gpu_resource<T>(zombies: &mut VecDeque<(u64, T)>, cleanup_fn: &dyn Fn(T), gpu_timeline_value: u64) {
+            while !zombies.is_empty() {
+                let (timeline_value, _) = zombies.back().unwrap();
+                
+                if *timeline_value > gpu_timeline_value {
+                    break;
+                }
+
+                let (_, object) = zombies.pop_back().unwrap();
+                cleanup_fn(object);
+            };
+        }
+
+
+        let submits = &mut self.main_queue_submits.lock().unwrap();
+        check_and_cleanup_gpu_resource::<Vec<CommandList>>(
+            submits,
+            &|_| {},
+            gpu_timeline_value
+        );
+
+        let mut zombies = self.main_queue_zombies.lock().unwrap();
+        check_and_cleanup_gpu_resource::<CommandListZombie>(
+            &mut zombies.command_lists,
+            &|zombie| {
+                self.command_buffer_pool_pool.lock()
+                    .unwrap()
+                    .put_back((zombie.command_pool, zombie.command_buffer));
+            },
+            gpu_timeline_value
+        );
+        // check_and_cleanup_gpu_resource::<BufferId>(
+        //     &mut zombies.buffers,
+        //     &|id| {
+        //         self.cleanup_buffer(id);
+        //     },
+        //     gpu_timeline_value
+        // );
+        // check_and_cleanup_gpu_resource::<ImageId>(
+        //     &mut zombies.images,
+        //     &|id| {
+        //         self.cleanup_image(id);
+        //     },
+        //     gpu_timeline_value
+        // );
+        // check_and_cleanup_gpu_resource::<ImageViewId>(
+        //     &mut zombies.image_views,
+        //     &|id| {
+        //         self.cleanup_image_view(id);
+        //     },
+        //     gpu_timeline_value
+        // );
+        // check_and_cleanup_gpu_resource::<SamplerId>(
+        //     &mut zombies.samplers,
+        //     &|id| {
+        //         self.cleanup_sampler(id);
+        //     },
+        //     gpu_timeline_value
+        // );
+        check_and_cleanup_gpu_resource::<SemaphoreZombie>(
+            &mut zombies.semaphores,
+            &|zombie| {
+                unsafe { self.logical_device.destroy_semaphore(zombie.semaphore, None) };
+            },
+            gpu_timeline_value
+        );
+        // check_and_cleanup_gpu_resource::<SplitBarrierZombie>(
+        //     &mut zombies.split_barriers,
+        //     &|zombie| {
+        //         unsafe { self.logical_device.destroy_event(zombie.barrier, None) };
+        //     },
+        //     gpu_timeline_value
+        // );
+        // check_and_cleanup_gpu_resource::<PipelineZombie>(
+        //     &mut zombies.pipelines,
+        //     &|zombie| {
+        //         unsafe { self.logical_device.destroy_semaphore(zombie.pipeline, None) };
+        //     },
+        //     gpu_timeline_value
+        // );
+        // check_and_cleanup_gpu_resource::<PipelineZombie>(
+        //     &mut zombies.timeline_query_pools,
+        //     &|zombie| {
+        //         unsafe { self.logical_device.destroy_query_pool(zombie.query_pool, None) };
+        //     },
+        //     gpu_timeline_value
+        // );
     }
 
     fn wait_idle(&self) {
@@ -465,7 +661,7 @@ impl Drop for DeviceInternal {
     fn drop(&mut self) {
         unsafe {
             self.wait_idle();
-            //self.main_queue_collect_garbage();
+            self.main_queue_collect_garbage();
 
             //self.allocator.free(self.buffer_device_address_buffer_allocation.take());
             self.logical_device.destroy_buffer(self.buffer_device_address_buffer, None);
@@ -487,24 +683,25 @@ mod tests {
     use std::ffi::CStr;
 
     fn context() -> Context {
-        Context::new(ContextInfo::default())
-            .expect("Context should be created.")
+        Context::new(ContextInfo::default()).unwrap()
     }
 
     #[test]
     fn simplest() {
-        let _daxa_context = context();
+        let daxa_context = context();
 
-        let _device = _daxa_context.create_device(DeviceInfo::default());
+        let device = daxa_context.create_device(DeviceInfo::default());
+
+        assert!(device.is_ok())
     }
 
     #[test]
     fn device_selection() {
-        let _daxa_context = context();
+        let daxa_context = context();
 
         // To select a device, you look at its properties and return a score.
         // Daxa will choose the device you scored as the highest.
-        let _device = _daxa_context.create_device(DeviceInfo {
+        let device = daxa_context.create_device(DeviceInfo {
             selector: |&properties| {
                 let mut score = 0;
 
@@ -518,11 +715,13 @@ mod tests {
                 score
             },
             debug_name: "My device",
-        }).expect("Device should be created.");
+        });
 
-        unsafe {
-            println!("{:?}", CStr::from_ptr(_device.properties().device_name.as_ptr()))
-        }
-        
+        assert!(device.is_ok());
+
+        // Once the device is created, you can query its properties, such
+        // as its name and much more! These are the same properties we used
+        // to discriminate in the GPU selection.
+        unsafe { println!("{:?}", CStr::from_ptr(device.unwrap().properties().device_name.as_ptr())) }
     }
 }

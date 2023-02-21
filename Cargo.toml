@@ -15,4 +15,3 @@ gpu-allocator = "0.20.0"
 [features]
 default = []
 conservative_rasterization = []
-thread_safety = []

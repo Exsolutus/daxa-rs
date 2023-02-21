@@ -1,6 +1,6 @@
 use crate::device::*;
 
-use anyhow::{Result, Context as _};
+use anyhow::{Context as _, Result};
 
 use ash::{
     extensions::ext::DebugUtils,
@@ -222,7 +222,7 @@ impl Context {
         let best_physical_device = physical_devices
             .iter()
             .max_by_key(|&a| device_score(a))
-            .expect("`physical_devices` should not be empty");
+            .expect("`physical_devices` should not be empty.");
 
         debug_assert!(device_score(best_physical_device) != -1, "No suitable device found.");
 
@@ -233,11 +233,12 @@ impl Context {
         let device_properties = unsafe { self.get_physical_device_properties(physical_device) };
 
         let logical_device = Device::new(device_info, device_properties, self.clone(), physical_device)
-            .expect("Device should be created");
+            .expect("Device should be created.");
 
         Ok(logical_device)
     }
 
+    #[cfg(debug_assertions)]
     #[inline]
     pub(crate) fn debug_utils(&self) -> &DebugUtils {
         &self.internal._debug_utils
@@ -277,8 +278,9 @@ mod tests {
 
     #[test]
     fn simplest() {
-        let _daxa_context = Context::new(ContextInfo::default())
-            .expect("Context should be created.");
+        let daxa_context = Context::new(ContextInfo::default());
+
+        assert!(daxa_context.is_ok())
     }
 
     #[test]
@@ -291,9 +293,11 @@ mod tests {
             println!("{:?}\n", message);
         }
 
-        let _daxa_context = Context::new(ContextInfo {
+        let daxa_context = Context::new(ContextInfo {
             validation_callback,
             ..Default::default()
         });
+
+        assert!(daxa_context.is_ok())
     }
 }
