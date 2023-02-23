@@ -1,0 +1,12 @@
+[package]
+name = "daxa_derive"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+bitfield = "0.14.0"
+syn = { version = "1.0", features = ["extra-traits"] }
+quote = "1.0"

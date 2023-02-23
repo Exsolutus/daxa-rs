@@ -5,13 +5,17 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["gpu_id_validation"]
+conservative_rasterization = []
+gpu_id_validation = []
+
 [dependencies]
+daxa_derive = { path = "./src/daxa_derive" }
+
 anyhow = "1.0.66"
 ash = { version = "0.37.1", features = ["linked"] }
 ash-window = "0.12.0"
+bitfield = "0.14.0"
 glfw = "0.51.0"
 gpu-allocator = "0.20.0"
-
-[features]
-default = []
-conservative_rasterization = []

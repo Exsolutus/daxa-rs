@@ -6,11 +6,8 @@ use crate::{
     device::Device,
     gpu_resources::GPUResourceId,
 };
-
 use anyhow::{Context as _, Result};
-
 use ash::vk;
-
 use std::{
     ffi::{
         CStr

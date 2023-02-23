@@ -1,15 +1,12 @@
 use crate::{command_list::*, context::Context, gpu_resources::*, semaphore::*};
 
 use anyhow::{Context as _, Result};
-
 use ash::{
     Device as LogicalDevice,
     extensions::ext::DebugUtils,
     vk::{self, PhysicalDevice}
 };
-
 use gpu_allocator::{vulkan::*, AllocatorDebugSettings, MemoryLocation};
-
 use std::{
     collections::VecDeque,
     ffi::{CStr},
@@ -522,14 +519,18 @@ impl Device {
             .push_front(submit);
     }
 
-
+    // TODO: preset_frame
 
     #[inline]
     pub fn collect_garbage(&self) {
         self.internal.main_queue_collect_garbage();
     }
 
+    // TODO: create_swapchain
 
+    // TODO: create_raster_pipeline
+
+    // TODO: create_compute_pipeline
 
     pub fn create_command_list(&self, info: CommandListInfo) -> Result<CommandList> {
         let (pool, buffer) = self.internal.command_buffer_pool_pool.lock()
@@ -541,6 +542,18 @@ impl Device {
 
     pub fn create_binary_semaphore(&self, info: BinarySemaphoreInfo) -> Result<BinarySemaphore> {
         BinarySemaphore::new(self.clone(), info)
+    }
+
+    pub fn create_timeline_semaphore(&self, info: TimelineSemaphoreInfo) -> Result<TimelineSemaphore> {
+        TimelineSemaphore::new(self.clone(), info)
+    }
+
+    // TODO: create_split_barrier
+
+    // TODO: create_timeline_query_pool
+
+    pub fn create_buffer(info: BufferInfo) -> Result<BufferId> {
+        todo!()
     }
 
     #[cfg(debug_assertions)]
