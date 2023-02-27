@@ -33,7 +33,7 @@ pub(crate) struct ImageViewSlot {
     pub zombie: bool,
 }
 
-#[derive(Slot, Debug, Default)]
+#[derive(Slot, Debug)]
 pub(crate) struct ImageSlot {
     pub view_slot: ImageViewSlot,
     pub info: ImageInfo,
@@ -41,6 +41,19 @@ pub(crate) struct ImageSlot {
     pub allocation: Allocation,
     pub swapchain_image_index: i32,
     pub zombie: bool
+}
+
+impl Default for ImageSlot {
+    fn default() -> Self {
+        Self {
+            view_slot: Default::default(),
+            info: Default::default(),
+            image: Default::default(),
+            allocation: Default::default(),
+            swapchain_image_index: -1,
+            zombie: Default::default(),
+        }
+    }
 }
 
 #[derive(Slot, Debug, Default)]

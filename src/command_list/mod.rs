@@ -264,15 +264,15 @@ impl CommandList {
         self.defer_destruction_helper(GPUResourceId(id.0), DEFERRED_DESTRUCTION_BUFFER_INDEX as u8);
     }
 
-    pub fn destroy_image_deferred(&self, id: ImageId) {
+    pub fn destroy_image_deferred(&mut self, id: ImageId) {
+        self.defer_destruction_helper(GPUResourceId(id.0), DEFERRED_DESTRUCTION_IMAGE_INDEX as u8);
+    }
+
+    pub fn destroy_image_view_deferred(&mut self, id: ImageViewId) {
         todo!()
     }
 
-    pub fn destroy_image_view_deferred(&self, id: ImageViewId) {
-        todo!()
-    }
-
-    pub fn destroy_sampler_deferred(&self, id: SamplerId) {
+    pub fn destroy_sampler_deferred(&mut self, id: SamplerId) {
         todo!()
     }
 
@@ -454,9 +454,16 @@ mod tests {
             ..Default::default()
         }).unwrap();
 
+        let image = app.device.create_image(ImageInfo {
+            size: vk::Extent3D { width: 1, height: 1, depth: 1 },
+            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            ..Default::default()
+        }).unwrap();
+
 
         // The gpu resources are not destroyed here. Their destruction is deferred until the command list completes execution on the gpu.
         command_list.destroy_buffer_deferred(buffer);
+        command_list.destroy_image_deferred(image);
 
         // The gpu resources are still alive, as long as this command list is not submitted and has not finished execution.
         let command_list = command_list.complete().unwrap();

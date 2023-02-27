@@ -287,7 +287,7 @@ impl GPUShaderResourceTable {
         }
     }
 
-    pub fn write_descriptor_set_image(&self, device: ash::Device, image_view: vk::ImageView, usage: vk::ImageUsageFlags, index: u32) {
+    pub fn write_descriptor_set_image(&self, device: &ash::Device, image_view: vk::ImageView, usage: vk::ImageUsageFlags, index: u32) {
         let mut descriptor_set_writes = vec![];
         
         if usage.contains(vk::ImageUsageFlags::STORAGE) {

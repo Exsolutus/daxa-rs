@@ -87,7 +87,7 @@ pub struct ImageInfo {
     pub array_layer_count: u32,
     pub sample_count: u32,
     pub usage: vk::ImageUsageFlags,
-    pub memory_flags: vk::MemoryPropertyFlags,
+    pub memory_flags: MemoryLocation,
     pub debug_name: &'static str,
 }
 
@@ -102,7 +102,7 @@ impl Default for ImageInfo {
             array_layer_count: 1,
             sample_count: 1,
             usage: vk::ImageUsageFlags::default(),
-            memory_flags: vk::MemoryPropertyFlags::default(),
+            memory_flags: MemoryLocation::GpuOnly,
             debug_name: ""
         }
     }

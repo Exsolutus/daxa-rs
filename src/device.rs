@@ -440,7 +440,7 @@ impl Device {
 
     #[inline]
     pub fn create_image(&self, info: ImageInfo) -> Result<ImageId> {
-        todo!()
+        self.0.new_image(info)
     }
 
     #[inline]
@@ -746,13 +746,13 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
-        // check_and_cleanup_gpu_resource::<ImageId>(
-        //     &mut zombies.images,
-        //     &|id| {
-        //         self.cleanup_image(id);
-        //     },
-        //     gpu_timeline_value
-        // );
+        check_and_cleanup_gpu_resource::<ImageId>(
+            &mut zombies.images,
+            &|id| {
+                self.cleanup_image(id);
+            },
+            gpu_timeline_value
+        );
         // check_and_cleanup_gpu_resource::<ImageViewId>(
         //     &mut zombies.image_views,
         //     &|id| {
@@ -895,8 +895,7 @@ impl DeviceInternal {
             let buffer_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
                 .object_type(vk::ObjectType::BUFFER)
                 .object_handle(vk::Handle::as_raw(ret.buffer))
-                .object_name(&CStr::from_ptr(buffer_name.as_ptr() as *const i8))
-                .build();
+                .object_name(&CStr::from_ptr(buffer_name.as_ptr() as *const i8));
             self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &buffer_name_info)?;
         }
 
@@ -910,7 +909,145 @@ impl DeviceInternal {
     }
 
     fn new_image(&self, info: ImageInfo) -> Result<ImageId> {
-        todo!()
+        let (id, image_slot_variant) = self.gpu_shader_resource_table.image_slots.new_slot();
+
+        let mut ret = ImageSlot {
+            info,
+            view_slot: ImageViewSlot {
+                info: ImageViewInfo {
+                    image_view_type: vk::ImageViewType::from_raw(info.dimensions as i32),
+                    format: info.format,
+                    image: ImageId(id.0),
+                    subresource_range: vk::ImageSubresourceRange {
+                        aspect_mask: info.aspect,
+                        base_mip_level: 0,
+                        level_count: info.mip_level_count,
+                        base_array_layer: 0,
+                        layer_count: info.array_layer_count
+                    },
+                    debug_name: info.debug_name
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        debug_assert!(info.dimensions >= 1 && info.dimensions <= 3, "Image dimensions must be 1, 2, or 3.");
+        debug_assert!(u32::count_ones(info.sample_count) == 1 && info.sample_count <= 64, "Image samples must be a power of two ranging from 1 to 64.");
+        debug_assert!(
+            info.size.width > 0 &&
+            info.size.height > 0 &&
+            info.size.depth > 0,
+            "Image size must be greater than 0 in each dimension."
+        );
+        debug_assert!(info.array_layer_count > 0, "Image array layer count must be greater than 0.");
+        debug_assert!(info.mip_level_count > 0, "Image mip level count must be greater than 0.");
+
+        let image_type = vk::ImageType::from_raw((info.dimensions - 1) as i32);
+
+        let mut image_create_flags = vk::ImageCreateFlags::empty();
+
+        const CUBE_FACE_N: u32 = 6u32;
+        if info.dimensions == 2 && info.size.width == info.size.height && info.array_layer_count % CUBE_FACE_N == 0 {
+            image_create_flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE;
+        }
+        if info.dimensions == 3 {
+            // TODO(grundlett): Figure out if there are cases where a 3D image CAN'T be used
+            // as a 2D array image view.
+            image_create_flags |= vk::ImageCreateFlags::TYPE_2D_ARRAY_COMPATIBLE;
+        }
+
+        let image_ci = vk::ImageCreateInfo::builder()
+            .flags(image_create_flags)
+            .image_type(image_type)
+            .format(info.format)
+            .extent(info.size)
+            .mip_levels(info.mip_level_count)
+            .array_layers(info.array_layer_count)
+            .samples(vk::SampleCountFlags::from_raw(info.sample_count))
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .usage(info.usage)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .queue_family_indices(slice::from_ref(&self.main_queue_family))
+            .initial_layout(vk::ImageLayout::UNDEFINED);
+
+        ret.image = unsafe {
+            self.logical_device.create_image(&image_ci, None)
+                .context("Image should be created.")?
+        };
+
+        let requirements = unsafe { self.logical_device.get_image_memory_requirements(ret.image) };
+        ret.allocation = self.allocator
+            .lock()
+            .unwrap()
+            .allocate(&AllocationCreateDesc {
+                name: info.debug_name,
+                requirements,
+                location: info.memory_flags,
+                linear: false
+            })
+            .context("Image memory should be allocated.")?;
+
+        unsafe {
+            self.logical_device.bind_image_memory(
+                ret.image,
+                ret.allocation.memory(),
+                ret.allocation.offset()
+            ).context("Device should bind image memory.")?
+        };
+
+        let image_view_type = if info.array_layer_count > 1 {
+            debug_assert!((1..2).contains(&info.dimensions), "Image dimensions must be 1 or 2 for image arrays.");
+            vk::ImageViewType::from_raw((info.dimensions + 3) as i32)
+        } else {
+            vk::ImageViewType::from_raw((info.dimensions - 1) as i32)
+        };
+
+        let image_view_ci = vk::ImageViewCreateInfo::builder()
+            .image(ret.image)
+            .view_type(image_view_type)
+            .format(info.format)
+            .components(*vk::ComponentMapping::builder()
+                .r(vk::ComponentSwizzle::IDENTITY)
+                .g(vk::ComponentSwizzle::IDENTITY)
+                .b(vk::ComponentSwizzle::IDENTITY)
+                .a(vk::ComponentSwizzle::IDENTITY)
+            )
+            .subresource_range(*vk::ImageSubresourceRange::builder()
+                .aspect_mask(info.aspect)
+                .base_mip_level(0)
+                .level_count(info.mip_level_count)
+                .base_array_layer(0)
+                .layer_count(info.array_layer_count)
+            );
+
+        ret.view_slot.image_view = unsafe {
+            self.logical_device.create_image_view(&image_view_ci, None)
+                .context("ImageView should be created.")?
+        };
+
+        #[cfg(debug_assertions)]
+        unsafe {
+            let image_name = format!("{} [Daxa Image]\0", info.debug_name);
+            let image_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE)
+                .object_handle(vk::Handle::as_raw(ret.image))
+                .object_name(&CStr::from_ptr(image_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &image_name_info)?;
+
+            let image_view_name = format!("{} [Daxa ImageView]\0", info.debug_name);
+            let image_view_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE_VIEW)
+                .object_handle(vk::Handle::as_raw(ret.view_slot.image_view))
+                .object_name(&CStr::from_ptr(image_view_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &image_view_name_info)?;
+        }
+
+        self.gpu_shader_resource_table.write_descriptor_set_image(&self.logical_device, ret.view_slot.image_view, info.usage, id.index());
+
+        *image_slot_variant = ret;
+
+        Ok(ImageId(id.0))
     }
 
     fn new_image_view(&self, info: ImageViewInfo) -> Result<ImageViewId> {
@@ -995,7 +1132,19 @@ impl DeviceInternal {
     }
 
     fn cleanup_image(&self, id: ImageId) {
-        todo!()
+        let image_slot = self.gpu_shader_resource_table.image_slots.dereference_id_mut(&id);
+        let image_slot = std::mem::take(image_slot);
+        self.gpu_shader_resource_table.write_descriptor_set_image(&self.logical_device, vk::ImageView::null(), image_slot.info.usage, id.index());
+        unsafe { self.logical_device.destroy_image_view(image_slot.view_slot.image_view, None) };
+        if image_slot.swapchain_image_index == NOT_OWNED_BY_SWAPCHAIN && !image_slot.allocation.is_null() {
+            self.allocator
+                .lock()
+                .unwrap()
+                .free(image_slot.allocation)
+                .unwrap();
+            unsafe { self.logical_device.destroy_image(image_slot.image, None) };
+        }
+        self.gpu_shader_resource_table.image_slots.return_slot(&id);
     }
 
     fn cleanup_image_view(&self, id: ImageViewId) {
