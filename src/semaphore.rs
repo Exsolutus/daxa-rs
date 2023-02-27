@@ -1,4 +1,5 @@
-use crate::{device::{Device, Zombie}};
+use crate::{core::*, device::Device};
+
 
 use anyhow::{Result, Context};
 
@@ -35,15 +36,15 @@ pub(crate) struct SemaphoreZombie {
 }
 impl Zombie for SemaphoreZombie { }
 
+
+
+#[derive(Clone)]
+pub struct BinarySemaphore(pub(crate) Arc<BinarySemaphoreInternal>);
+
 pub(crate) struct BinarySemaphoreInternal {
     device: Device,
     pub semaphore: vk::Semaphore,
     info: BinarySemaphoreInfo,
-}
-
-#[derive(Clone)]
-pub struct BinarySemaphore {
-    pub(crate) internal: Arc<BinarySemaphoreInternal>
 }
 
 // BinarySemaphore creation methods
@@ -55,7 +56,7 @@ impl BinarySemaphore {
         let semaphore_ci = vk::SemaphoreCreateInfo::builder();
 
         let semaphore = unsafe {
-            device.create_semaphore(&semaphore_ci, None)
+            device.0.logical_device.create_semaphore(&semaphore_ci, None)
                 .context("Device should create a semaphore.")?
         };
 
@@ -66,16 +67,14 @@ impl BinarySemaphore {
                 .object_type(vk::ObjectType::SEMAPHORE)
                 .object_handle(vk::Handle::as_raw(semaphore))
                 .object_name(&CStr::from_ptr(semaphore_name.as_ptr() as *const i8));
-            device.debug_utils().set_debug_utils_object_name(device.handle(), &semaphore_name_info)?;
+            device.debug_utils().set_debug_utils_object_name(device.0.logical_device.handle(), &semaphore_name_info)?;
         }
 
-        Ok(Self {
-            internal: Arc::new(BinarySemaphoreInternal {
-                device,
-                semaphore,
-                info
-            })
-        })
+        Ok(Self(Arc::new(BinarySemaphoreInternal {
+            device,
+            semaphore,
+            info
+        })))
     }
 }
 
@@ -83,7 +82,7 @@ impl BinarySemaphore {
 impl BinarySemaphore {
     #[inline]
     pub fn info(&self) -> &BinarySemaphoreInfo {
-        &self.internal.info
+        &self.0.info
     }
 }
 
@@ -94,9 +93,9 @@ impl BinarySemaphoreInternal {
 
 impl Drop for BinarySemaphoreInternal {
     fn drop(&mut self) {
-        let timeline = self.device.internal.main_queue_cpu_timeline.load(Ordering::Acquire);
+        let timeline = self.device.0.main_queue_cpu_timeline.load(Ordering::Acquire);
 
-        self.device.internal.main_queue_zombies.lock()
+        self.device.0.main_queue_zombies.lock()
             .unwrap()
             .semaphores.push_back((
                 timeline,
@@ -109,16 +108,15 @@ impl Drop for BinarySemaphoreInternal {
 
 
 
+#[derive(Clone)]
+pub struct TimelineSemaphore(pub(crate) Arc<TimelineSemaphoreInternal>);
+
 pub(crate) struct TimelineSemaphoreInternal {
     device: Device,
     pub semaphore: vk::Semaphore,
     info: TimelineSemaphoreInfo
 }
 
-#[derive(Clone)]
-pub struct TimelineSemaphore {
-    pub(crate) internal: Arc<TimelineSemaphoreInternal>
-}
 
 // TimelineSemaphore creation methods
 impl TimelineSemaphore {
@@ -135,7 +133,7 @@ impl TimelineSemaphore {
             .push_next(&mut semaphore_type_ci);
         
         let semaphore = unsafe {
-            device.create_semaphore(&semaphore_ci, None)
+            device.0.logical_device.create_semaphore(&semaphore_ci, None)
                 .context("Device should create a semaphore.")?
         };
 
@@ -146,16 +144,14 @@ impl TimelineSemaphore {
                 .object_type(vk::ObjectType::SEMAPHORE)
                 .object_handle(vk::Handle::as_raw(semaphore))
                 .object_name(&CStr::from_ptr(semaphore_name.as_ptr() as *const i8));
-            device.debug_utils().set_debug_utils_object_name(device.handle(), &semaphore_name_info)?;
+            device.debug_utils().set_debug_utils_object_name(device.0.logical_device.handle(), &semaphore_name_info)?;
         }
 
-        Ok(Self {
-            internal: Arc::new(TimelineSemaphoreInternal {
-                device,
-                semaphore,
-                info
-            })
-        })
+        Ok(Self(Arc::new(TimelineSemaphoreInternal {
+            device,
+            semaphore,
+            info
+        })))
     }
 }
 
@@ -163,23 +159,23 @@ impl TimelineSemaphore {
 impl TimelineSemaphore {
     #[inline]
     pub fn info(&self) -> &TimelineSemaphoreInfo {
-        &self.internal.info
+        &self.0.info
     }
 
     #[inline]
     pub fn value(&self) -> u64 {
         unsafe {
             // TODO: maybe handle errors here better
-            self.internal.device.get_semaphore_counter_value(self.internal.semaphore).unwrap()
+            self.0.device.0.logical_device.get_semaphore_counter_value(self.0.semaphore).unwrap()
         }
     }
 
     pub fn set_value(&self, value: u64) {
         let signal_info = vk::SemaphoreSignalInfo::builder()
-            .semaphore(self.internal.semaphore)
+            .semaphore(self.0.semaphore)
             .value(value);
 
-        unsafe { self.internal.device.signal_semaphore(&signal_info).unwrap_unchecked() };
+        unsafe { self.0.device.0.logical_device.signal_semaphore(&signal_info).unwrap_unchecked() };
     }
 
     pub fn wait_for_value(
@@ -188,10 +184,10 @@ impl TimelineSemaphore {
         timeout: u64
     ) -> bool {
         let wait_info = vk::SemaphoreWaitInfo::builder()
-            .semaphores(slice::from_ref(&self.internal.semaphore))
+            .semaphores(slice::from_ref(&self.0.semaphore))
             .values(slice::from_ref(&value));
 
-        unsafe { self.internal.device.wait_semaphores(&wait_info, timeout) != Err(vk::Result::TIMEOUT) }
+        unsafe { self.0.device.0.logical_device.wait_semaphores(&wait_info, timeout) != Err(vk::Result::TIMEOUT) }
     }
 }
 
@@ -202,9 +198,9 @@ impl TimelineSemaphoreInternal {
 
 impl Drop for TimelineSemaphoreInternal {
     fn drop(&mut self) {
-        let timeline = self.device.internal.main_queue_cpu_timeline.load(Ordering::Acquire);
+        let timeline = self.device.0.main_queue_cpu_timeline.load(Ordering::Acquire);
 
-        self.device.internal.main_queue_zombies.lock()
+        self.device.0.main_queue_zombies.lock()
             .unwrap()
             .semaphores.push_back((
                 timeline,
@@ -244,16 +240,16 @@ mod tests {
         let app = App::new();
 
         let command_list1 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-        command_list1.complete();
+        let command_list1 = command_list1.complete().unwrap();
 
         let command_list2 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-        command_list2.complete();
+        let command_list2 = command_list2.complete().unwrap();
 
         let command_list3 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-        command_list3.complete();
+        let command_list3 = command_list3.complete().unwrap();
 
         let command_list4 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-        command_list4.complete();
+        let command_list4 = command_list4.complete().unwrap();
 
         let binary_semaphore1 = app.device.create_binary_semaphore(BinarySemaphoreInfo::default()).unwrap();
         let binary_semaphore2 = app.device.create_binary_semaphore(BinarySemaphoreInfo::default()).unwrap();

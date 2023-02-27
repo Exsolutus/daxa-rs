@@ -27,6 +27,8 @@ pub trait Slot {
     fn is_zombie(&self) -> bool;
 }
 
+pub trait Zombie { }
+
 
 
 

@@ -88,6 +88,9 @@ impl Default for ContextInfo {
 
 
 
+#[derive(Clone)]
+pub struct Context(Arc<ContextInternal>);
+
 struct ContextInternal {
     instance: Instance,
     info: Box<ContextInfo>,
@@ -95,19 +98,15 @@ struct ContextInternal {
     #[cfg(debug_assertions)] _debug_utils_messenger: DebugUtilsMessenger,
 }
 
-#[derive(Clone)]
-pub struct Context {
-    internal: Arc<ContextInternal>
-}
-
 impl Deref for Context {
     type Target = Instance;
 
     fn deref(&self) -> &Self::Target {
-        &self.internal.instance
+        &self.0.instance
     }
 }
 
+// Context creation methods
 impl Context {
     pub fn new(
         info: ContextInfo
@@ -189,16 +188,17 @@ impl Context {
             (debug_utils, debug_utils_messenger)
         };
 
-        Ok(Self {
-            internal: Arc::new(ContextInternal {
-                instance,
-                info,
-                #[cfg(debug_assertions)] _debug_utils,
-                #[cfg(debug_assertions)] _debug_utils_messenger,
-            })
-        })
+        Ok(Self(Arc::new(ContextInternal {
+            instance,
+            info,
+            #[cfg(debug_assertions)] _debug_utils,
+            #[cfg(debug_assertions)] _debug_utils_messenger,
+        })))
     }
+}
 
+// Context usage methods
+impl Context {
     pub fn create_device(
         &self,
         device_info: DeviceInfo
@@ -241,7 +241,7 @@ impl Context {
     #[cfg(debug_assertions)]
     #[inline]
     pub(crate) fn debug_utils(&self) -> &DebugUtils {
-        &self.internal._debug_utils
+        &self.0._debug_utils
     }
 }
 

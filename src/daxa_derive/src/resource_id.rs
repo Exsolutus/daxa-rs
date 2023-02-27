@@ -22,7 +22,7 @@ pub fn impl_resource_id(ast: &syn::DeriveInput) -> TokenStream {
                 #[inline]
                 index, set_index: 24, 0;
                 #[inline]
-                u8, version, set_version: 8, 0;
+                u8, version, set_version: 31, 25;
             }
 
             #[inline]
