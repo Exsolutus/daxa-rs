@@ -223,7 +223,7 @@ impl<ResourceT: Slot + Default + std::fmt::Debug> GPUShaderResourcePool<Resource
             let _use_after_free_check_lock = self.use_after_free_check_mtx.lock().unwrap();
             let pages = unsafe { self.pages.get().as_ref().unwrap() };
             let version = pages[page].as_ref().unwrap()[offset].1;
-            debug_assert!(version != id.version(), "Detected use after free for a resource id.");
+            debug_assert!(version == id.version(), "Detected use after free for a resource id.");
         }
 
         let pages = unsafe { self.pages.get().as_ref().unwrap() };

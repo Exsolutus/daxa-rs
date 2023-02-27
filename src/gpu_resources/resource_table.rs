@@ -329,7 +329,7 @@ impl GPUShaderResourceTable {
         }
     }
 
-    pub fn write_descriptor_set_sampler(&self, device: ash::Device, sampler: vk::Sampler, index: u32) {
+    pub fn write_descriptor_set_sampler(&self, device: &ash::Device, sampler: vk::Sampler, index: u32) {
         let descriptor_image_info = vk::DescriptorImageInfo::builder()
             .sampler(sampler)
             .build();

@@ -132,8 +132,8 @@ impl Default for ImageViewInfo {
 #[derive(Clone, Copy, Debug)]
 pub struct SamplerInfo {
     pub magnification_filter: vk::Filter,
-    pub minification_filder: vk::Filter,
-    pub mipmap_filter: vk::Filter,
+    pub minification_filter: vk::Filter,
+    pub mipmap_mode: vk::SamplerMipmapMode,
     pub reduction_mode: vk::SamplerReductionMode,
     pub address_mode_u: vk::SamplerAddressMode,
     pub address_mode_v: vk::SamplerAddressMode,
@@ -154,8 +154,8 @@ impl Default for SamplerInfo {
     fn default() -> Self {
         Self {
             magnification_filter: vk::Filter::LINEAR,
-            minification_filder: vk::Filter::LINEAR,
-            mipmap_filter: vk::Filter::LINEAR,
+            minification_filter: vk::Filter::LINEAR,
+            mipmap_mode: vk::SamplerMipmapMode::LINEAR,
             reduction_mode: vk::SamplerReductionMode::WEIGHTED_AVERAGE,
             address_mode_u: vk::SamplerAddressMode::CLAMP_TO_EDGE,
             address_mode_v: vk::SamplerAddressMode::CLAMP_TO_EDGE,

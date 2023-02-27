@@ -445,12 +445,12 @@ impl Device {
 
     #[inline]
     pub fn create_image_view(&self, info: ImageViewInfo) -> Result<ImageViewId> {
-        todo!()
+        self.0.new_image_view(info)
     }
 
     #[inline]
     pub fn create_sampler(&self, info: SamplerInfo) -> Result<SamplerId> {
-        todo!()
+        self.0.new_sampler(info)
     }
 
 
@@ -746,6 +746,13 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
+        check_and_cleanup_gpu_resource::<ImageViewId>(
+            &mut zombies.image_views,
+            &|id| {
+                self.cleanup_image_view(id);
+            },
+            gpu_timeline_value
+        );
         check_and_cleanup_gpu_resource::<ImageId>(
             &mut zombies.images,
             &|id| {
@@ -753,20 +760,13 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
-        // check_and_cleanup_gpu_resource::<ImageViewId>(
-        //     &mut zombies.image_views,
-        //     &|id| {
-        //         self.cleanup_image_view(id);
-        //     },
-        //     gpu_timeline_value
-        // );
-        // check_and_cleanup_gpu_resource::<SamplerId>(
-        //     &mut zombies.samplers,
-        //     &|id| {
-        //         self.cleanup_sampler(id);
-        //     },
-        //     gpu_timeline_value
-        // );
+        check_and_cleanup_gpu_resource::<SamplerId>(
+            &mut zombies.samplers,
+            &|id| {
+                self.cleanup_sampler(id);
+            },
+            gpu_timeline_value
+        );
         check_and_cleanup_gpu_resource::<SemaphoreZombie>(
             &mut zombies.semaphores,
             &|zombie| {
@@ -807,13 +807,25 @@ impl DeviceInternal {
     }
 
 
-    fn validate_image_slice(&self, slice: &vk::ImageSubresourceRange, id: ImageId) -> vk::ImageSubresourceRange {
-        todo!()
+    fn validate_image_subresource_range(&self, range: &vk::ImageSubresourceRange, id: ImageId) -> vk::ImageSubresourceRange {
+        match range.level_count == u32::MAX || range.level_count == 0 {
+            true => {
+                let image_info = self.image_slot(id).info;
+                vk::ImageSubresourceRange::builder()
+                    .aspect_mask(image_info.aspect)
+                    .base_mip_level(0)
+                    .level_count(image_info.mip_level_count)
+                    .base_array_layer(0)
+                    .layer_count(image_info.array_layer_count)
+                    .build()
+            },
+            false => *range
+        }
     }
 
-    // fn validate_image_slice(&self, slice: &vk::ImageSubresourceRange, id: ImageViewId) -> vk::ImageSubresourceRange {
-    //     todo!()
-    // }
+    fn validate_image_view_subresource_range(&self, slice: &vk::ImageSubresourceRange, id: ImageViewId) -> vk::ImageSubresourceRange {
+        todo!()
+    }
 
 
     fn new_buffer(&self, info: BufferInfo) -> Result<BufferId> {
@@ -1051,28 +1063,114 @@ impl DeviceInternal {
     }
 
     fn new_image_view(&self, info: ImageViewInfo) -> Result<ImageViewId> {
-        todo!()
+        let (id, image_slot) = self.gpu_shader_resource_table.image_slots.new_slot();
+
+        let parent_image_slot = self.image_slot(info.image);
+
+        let mut ret = ImageViewSlot {
+            info,
+            ..Default::default()
+        };
+
+        let subresource_range = self.validate_image_subresource_range(&info.subresource_range, info.image);
+        ret.info.subresource_range = subresource_range;
+
+        let image_view_ci = vk::ImageViewCreateInfo::builder()
+            .image(parent_image_slot.image)
+            .view_type(info.image_view_type)
+            .format(info.format)
+            .components(*vk::ComponentMapping::builder()
+                .r(vk::ComponentSwizzle::IDENTITY)
+                .g(vk::ComponentSwizzle::IDENTITY)
+                .b(vk::ComponentSwizzle::IDENTITY)
+                .a(vk::ComponentSwizzle::IDENTITY)
+            )
+            .subresource_range(subresource_range);
+
+        ret.image_view = unsafe {
+            self.logical_device.create_image_view(&image_view_ci, None)
+                .context("ImageView should be created.")?
+        };
+
+        #[cfg(debug_assertions)]
+        unsafe {
+            let image_view_name = format!("{} [Daxa ImageView]\0", info.debug_name);
+            let image_view_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE_VIEW)
+                .object_handle(vk::Handle::as_raw(ret.image_view))
+                .object_name(&CStr::from_ptr(image_view_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &image_view_name_info)?;
+        }
+
+        self.gpu_shader_resource_table.write_descriptor_set_image(&self.logical_device, ret.image_view, parent_image_slot.info.usage, id.index());
+
+        image_slot.view_slot = ret;
+
+        Ok(ImageViewId(id.0))
     }
 
     fn new_sampler(&self, info: SamplerInfo) -> Result<SamplerId> {
-        todo!()
+        let (id, ret) = self.gpu_shader_resource_table.sampler_slots.new_slot();
+
+        ret.info = info;
+        ret.zombie = false;
+
+        let mut sampler_reduction_mode_ci = vk::SamplerReductionModeCreateInfo::builder()
+            .reduction_mode(info.reduction_mode);
+
+        let sampler_ci = vk::SamplerCreateInfo::builder()
+            .push_next(&mut sampler_reduction_mode_ci)
+            .mag_filter(info.magnification_filter)
+            .min_filter(info.minification_filter)
+            .mipmap_mode(info.mipmap_mode)
+            .address_mode_u(info.address_mode_u)
+            .address_mode_v(info.address_mode_v)
+            .address_mode_w(info.address_mode_w)
+            .mip_lod_bias(info.mip_lod_bias)
+            .anisotropy_enable(info.enable_anisotropy)
+            .max_anisotropy(info.max_anisotropy)
+            .compare_enable(info.enable_compare)
+            .compare_op(info.compare_op)
+            .min_lod(info.min_lod)
+            .max_lod(info.max_lod)
+            .border_color(info.border_color)
+            .unnormalized_coordinates(info.enable_unnormalized_coordinates);
+
+        ret.sampler = unsafe {
+            self.logical_device.create_sampler(&sampler_ci, None)
+                .context("Sampler should be created.")?
+        };
+
+        #[cfg(debug_assertions)]
+        unsafe {
+            let sampler_name = format!("{} [Daxa Sampler]\0", info.debug_name);
+            let sampler_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::SAMPLER)
+                .object_handle(vk::Handle::as_raw(ret.sampler))
+                .object_name(&CStr::from_ptr(sampler_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &sampler_name_info)?;
+        }
+
+        self.gpu_shader_resource_table.write_descriptor_set_sampler(&self.logical_device, ret.sampler, id.index());
+
+        Ok(SamplerId(id.0))
     }
 
 
     fn buffer_slot(&self, id: BufferId) -> &BufferSlot {
-        todo!()
+        self.gpu_shader_resource_table.buffer_slots.dereference_id(&id)
     }
 
     fn image_slot(&self, id: ImageId) -> &ImageSlot {
-        todo!()
+        self.gpu_shader_resource_table.image_slots.dereference_id(&id)
     }
 
     fn image_view_slot(&self, id: ImageViewId) -> &ImageViewSlot {
-        todo!()
+        &self.gpu_shader_resource_table.image_slots.dereference_id(&id).view_slot
     }
 
     fn sampler_slot(&self, id: SamplerId) -> &SamplerSlot {
-        todo!()
+        self.gpu_shader_resource_table.sampler_slots.dereference_id(&id)
     }
 
 
@@ -1148,11 +1246,23 @@ impl DeviceInternal {
     }
 
     fn cleanup_image_view(&self, id: ImageViewId) {
-        todo!()
+        debug_assert!(
+            self.gpu_shader_resource_table.image_slots.dereference_id(&id).image == vk::Image::null(),
+            "Cannot destroy the default image view of an image."
+        );
+        let image_view_slot = &mut self.gpu_shader_resource_table.image_slots.dereference_id_mut(&id).view_slot;
+        let image_view_slot = std::mem::take(image_view_slot);
+        self.gpu_shader_resource_table.write_descriptor_set_image(&self.logical_device, vk::ImageView::null(), self.image_slot(image_view_slot.info.image).info.usage, id.index());
+        unsafe { self.logical_device.destroy_image_view(image_view_slot.image_view, None) };
+        self.gpu_shader_resource_table.image_slots.return_slot(&id);
     }
 
     fn cleanup_sampler(&self, id: SamplerId) {
-        todo!()
+        let sampler_slot = self.gpu_shader_resource_table.sampler_slots.dereference_id_mut(&id);
+        let sampler_slot = std::mem::take(sampler_slot);
+        self.gpu_shader_resource_table.write_descriptor_set_sampler(&self.logical_device, self.null_sampler, id.index());
+        unsafe { self.logical_device.destroy_sampler(sampler_slot.sampler, None) };
+        self.gpu_shader_resource_table.sampler_slots.return_slot(&id);
     }
 }
 

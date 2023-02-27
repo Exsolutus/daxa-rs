@@ -269,11 +269,11 @@ impl CommandList {
     }
 
     pub fn destroy_image_view_deferred(&mut self, id: ImageViewId) {
-        todo!()
+        self.defer_destruction_helper(GPUResourceId(id.0), DEFERRED_DESTRUCTION_IMAGE_VIEW_INDEX as u8);
     }
 
     pub fn destroy_sampler_deferred(&mut self, id: SamplerId) {
-        todo!()
+        self.defer_destruction_helper(GPUResourceId(id.0), DEFERRED_DESTRUCTION_SAMPLER_INDEX as u8);
     }
 
 
@@ -404,7 +404,7 @@ impl Drop for CommandListInternal {
 
 #[cfg(test)]
 mod tests {
-    use crate::{context::*, device::*, gpu_resources::*};
+    use crate::{core::*, context::*, device::*, gpu_resources::*};
     use super::{CommandList, CommandListInfo};
     use ash::vk;
     use std::slice;
@@ -460,10 +460,20 @@ mod tests {
             ..Default::default()
         }).unwrap();
 
+        let image_view = app.device.create_image_view(ImageViewInfo {
+            image,
+            ..Default::default()
+        }).unwrap();
+
+        let sampler = app.device.create_sampler(SamplerInfo {
+            ..Default::default()
+        }).unwrap();
 
         // The gpu resources are not destroyed here. Their destruction is deferred until the command list completes execution on the gpu.
         command_list.destroy_buffer_deferred(buffer);
         command_list.destroy_image_deferred(image);
+        command_list.destroy_image_view_deferred(image_view);
+        command_list.destroy_sampler_deferred(sampler);
 
         // The gpu resources are still alive, as long as this command list is not submitted and has not finished execution.
         let command_list = command_list.complete().unwrap();
