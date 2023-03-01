@@ -5,13 +5,7 @@ use anyhow::{Context as _, Result};
 use ash::{
     extensions::ext::DebugUtils,
     Instance,
-    vk::{
-        self,
-        DebugUtilsMessageSeverityFlagsEXT as MessageSeverity,
-        DebugUtilsMessageTypeFlagsEXT as MessageType,
-        DebugUtilsMessengerCallbackDataEXT as MessageData,
-        DebugUtilsMessengerEXT as DebugUtilsMessenger
-    },
+    vk,
 };
 
 use std::{
@@ -19,6 +13,14 @@ use std::{
     ops::Deref,
     os::raw::{c_char, c_void},
     sync::Arc, 
+};
+
+// Reexport
+pub use vk::{
+    DebugUtilsMessageSeverityFlagsEXT as MessageSeverity,
+    DebugUtilsMessageTypeFlagsEXT as MessageType,
+    DebugUtilsMessengerCallbackDataEXT as MessageData,
+    DebugUtilsMessengerEXT as DebugUtilsMessenger
 };
 
 
@@ -71,9 +73,9 @@ fn default_validation_callback(
 
 
 pub struct ContextInfo {
-    application_name: &'static str,
-    application_version: u32,
-    #[cfg(debug_assertions)] validation_callback: ValidationCallback
+    pub application_name: &'static str,
+    pub application_version: u32,
+    #[cfg(debug_assertions)] pub validation_callback: ValidationCallback
 }
 
 impl Default for ContextInfo {
@@ -267,37 +269,5 @@ impl Drop for ContextInternal {
             //  Device objects created with this instance retain a reference, so this should only drop after all Devices drop
             self.instance.destroy_instance(None);
         }
-    }
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::{Context, ContextInfo, MessageSeverity, MessageType};
-
-    #[test]
-    fn simplest() {
-        let daxa_context = Context::new(ContextInfo::default());
-
-        assert!(daxa_context.is_ok())
-    }
-
-    #[test]
-    fn custom_validation_callback() {
-        fn validation_callback(
-            _message_severity: MessageSeverity,
-            _message_type: MessageType,
-            message: &std::ffi::CStr,
-        ) {
-            println!("{:?}\n", message);
-        }
-
-        let daxa_context = Context::new(ContextInfo {
-            validation_callback,
-            ..Default::default()
-        });
-
-        assert!(daxa_context.is_ok())
     }
 }

@@ -9,7 +9,7 @@ impl Default for Access {
     }
 }
 
-pub(crate) mod access_consts {
+pub mod access_consts {
     use super::Access;
     use ash::vk;
 
