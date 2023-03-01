@@ -1,10 +1,7 @@
-use crate::{core::*, device::Device};
-
+use crate::{device::Device};
 
 use anyhow::{Result, Context};
-
 use ash::vk;
-
 use std::{
     ffi::{
         CStr
@@ -30,12 +27,9 @@ pub struct TimelineSemaphoreInfo {
 }
 
 
-
 pub(crate) struct SemaphoreZombie {
     pub semaphore: vk::Semaphore
 }
-impl Zombie for SemaphoreZombie { }
-
 
 
 #[derive(Clone)]

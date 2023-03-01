@@ -62,7 +62,7 @@ pub struct SamplerId(pub u32);
 
 #[derive(Clone, Copy, Debug)]
 pub struct BufferInfo {
-    pub memory_flags: MemoryLocation,
+    pub memory_location: MemoryLocation,
     pub size: u32,
     pub debug_name: &'static str,
 }
@@ -70,7 +70,7 @@ pub struct BufferInfo {
 impl Default for BufferInfo {
     fn default() -> Self {
         Self {
-            memory_flags: MemoryLocation::GpuOnly,
+            memory_location: MemoryLocation::GpuOnly,
             size: 0,
             debug_name: ""
         }

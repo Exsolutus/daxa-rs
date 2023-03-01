@@ -27,11 +27,6 @@ pub trait Slot {
     fn is_zombie(&self) -> bool;
 }
 
-pub trait Zombie { }
-
-
-
-
 pub trait Set {
     fn contains(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersects(&self, other: vk::ImageSubresourceRange) -> bool;

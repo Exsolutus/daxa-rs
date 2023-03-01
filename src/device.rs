@@ -1,4 +1,12 @@
-use crate::{core::*, command_list::*, context::Context, gpu_resources::*, semaphore::*};
+use crate::{
+    core::*,
+    command_list::*,
+    context::Context,
+    gpu_resources::*,
+    semaphore::*,
+    timeline_query::*,
+    split_barrier::*
+};
 
 use anyhow::{Context as _, Result};
 use ash::{
@@ -128,9 +136,9 @@ pub(crate) struct MainQueueZombies {
     pub image_views: VecDeque<(u64, ImageViewId)>,
     pub samplers: VecDeque<(u64, SamplerId)>,
     pub semaphores: VecDeque<(u64, SemaphoreZombie)>,
-    // split_barriers: VecDeque<(u64, SplitBarrierZombie)>, // TODO
-    // pipelines: VecDeque<(u64, PipelineZombie)>,
-    // timeline_query_pools: VecDeque<(u64, TimelineQueryPoolZombie)>,
+    pub split_barriers: VecDeque<(u64, SplitBarrierZombie)>,
+    // pub pipelines: VecDeque<(u64, PipelineZombie)>,
+    pub timeline_query_pools: VecDeque<(u64, TimelineQueryPoolZombie)>,
 }
 
 // Device creation methods
@@ -453,25 +461,30 @@ impl Device {
         self.0.new_sampler(info)
     }
 
+    #[inline]
+    pub fn create_timeline_query_pool(&self, info: TimelineQueryPoolInfo) -> Result<TimelineQueryPool> {
+        TimelineQueryPool::new(self.clone(), info)
+    }
+
 
     #[inline]
     pub fn destroy_buffer(&self, id: BufferId) {
-        todo!()
+        self.0.zombify_buffer(id);
     }
 
     #[inline]
     pub fn destroy_image(&self, id: ImageId) {
-        todo!()
+        self.0.zombify_image(id);
     }
 
     #[inline]
     pub fn destroy_image_view(&self, id: ImageViewId) {
-        todo!()
+        self.0.zombify_image_view(id);
     }
 
     #[inline]
     pub fn destroy_sampler(&self, id: SamplerId) {
-        todo!()
+        self.0.zombify_sampler(id);
     }
 
 
@@ -487,12 +500,25 @@ impl Device {
 
     #[inline]
     pub fn get_host_address(&self, id: BufferId) -> Option<NonNull<c_void>> {
-        todo!()
+        // NOTE(exsolutus) returning Option for user handling instead of debug-only panic
+        // debug_assert!(
+        //     self.0.buffer_slot(id).allocation.mapped_ptr().is_some(),
+        //     "Host buffer address is only available for buffers created with the following memory locations:\n\tMemoryLocation::CpuToGpu \n\tMemoryLocation::GpuToCpu"
+        // );
+        self.0.buffer_slot(id).allocation.mapped_ptr()
     }
 
     #[inline]
     pub fn get_host_address_as<T>(&self, id: BufferId) -> Option<NonNull<T>> {
-        todo!()
+        // NOTE(exsolutus) returning Option for user handling instead of debug-only panic
+        // debug_assert!(
+        //     self.0.buffer_slot(id).allocation.mapped_ptr().is_some(),
+        //     "Host buffer address is only available for buffers created with the following memory locations:\n\tMemoryLocation::CpuToGpu \n\tMemoryLocation::GpuToCpu"
+        // );
+        match self.0.buffer_slot(id).allocation.mapped_ptr() {
+            Some(address) => Some(address.cast::<T>()),
+            None => None
+        }
     }
 
     #[inline]
@@ -767,6 +793,13 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
+        // check_and_cleanup_gpu_resource::<PipelineZombie>(
+        //     &mut zombies.pipelines,
+        //     &|zombie| {
+        //         unsafe { self.logical_device.destroy_pipeline(zombie.pipeline, None) };
+        //     },
+        //     gpu_timeline_value
+        // );
         check_and_cleanup_gpu_resource::<SemaphoreZombie>(
             &mut zombies.semaphores,
             &|zombie| {
@@ -774,27 +807,20 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
-        // check_and_cleanup_gpu_resource::<SplitBarrierZombie>(
-        //     &mut zombies.split_barriers,
-        //     &|zombie| {
-        //         unsafe { self.logical_device.destroy_event(zombie.barrier, None) };
-        //     },
-        //     gpu_timeline_value
-        // );
-        // check_and_cleanup_gpu_resource::<PipelineZombie>(
-        //     &mut zombies.pipelines,
-        //     &|zombie| {
-        //         unsafe { self.logical_device.destroy_semaphore(zombie.pipeline, None) };
-        //     },
-        //     gpu_timeline_value
-        // );
-        // check_and_cleanup_gpu_resource::<PipelineZombie>(
-        //     &mut zombies.timeline_query_pools,
-        //     &|zombie| {
-        //         unsafe { self.logical_device.destroy_query_pool(zombie.query_pool, None) };
-        //     },
-        //     gpu_timeline_value
-        // );
+        check_and_cleanup_gpu_resource::<SplitBarrierZombie>(
+            &mut zombies.split_barriers,
+            &|zombie| {
+                unsafe { self.logical_device.destroy_event(zombie.event, None) };
+            },
+            gpu_timeline_value
+        );
+        check_and_cleanup_gpu_resource::<TimelineQueryPoolZombie>(
+            &mut zombies.timeline_query_pools,
+            &|zombie| {
+                unsafe { self.logical_device.destroy_query_pool(zombie.timeline_query_pool, None) };
+            },
+            gpu_timeline_value
+        );
     }
 
     fn wait_idle(&self) {
@@ -870,7 +896,7 @@ impl DeviceInternal {
             .allocate(&AllocationCreateDesc {
                 name: info.debug_name,
                 requirements,
-                location: info.memory_flags,
+                location: info.memory_location,
                 linear: true
             })
             .context("Buffer memory should be allocated.")?;
@@ -1157,19 +1183,19 @@ impl DeviceInternal {
     }
 
 
-    fn buffer_slot(&self, id: BufferId) -> &BufferSlot {
+    pub fn buffer_slot(&self, id: BufferId) -> &BufferSlot {
         self.gpu_shader_resource_table.buffer_slots.dereference_id(&id)
     }
 
-    fn image_slot(&self, id: ImageId) -> &ImageSlot {
+    pub fn image_slot(&self, id: ImageId) -> &ImageSlot {
         self.gpu_shader_resource_table.image_slots.dereference_id(&id)
     }
 
-    fn image_view_slot(&self, id: ImageViewId) -> &ImageViewSlot {
+    pub fn image_view_slot(&self, id: ImageViewId) -> &ImageViewSlot {
         &self.gpu_shader_resource_table.image_slots.dereference_id(&id).view_slot
     }
 
-    fn sampler_slot(&self, id: SamplerId) -> &SamplerSlot {
+    pub fn sampler_slot(&self, id: SamplerId) -> &SamplerSlot {
         self.gpu_shader_resource_table.sampler_slots.dereference_id(&id)
     }
 
@@ -1192,19 +1218,42 @@ impl DeviceInternal {
 
 
     fn zombify_buffer(&self, id: BufferId) {
-        todo!()
+        let mut lock = self.main_queue_zombies.lock().unwrap();
+        let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
+        debug_assert!(
+            self.gpu_shader_resource_table.buffer_slots.dereference_id(&id).zombie == false,
+            "Detected free after free - Buffer is already a zombie."
+        );
+        self.gpu_shader_resource_table.buffer_slots.dereference_id_mut(&id).zombie = true;
+        lock.buffers.push_front((cpu_timeline_value, id));
     }
 
     fn zombify_image(&self, id: ImageId) {
-        todo!()
+        let mut lock = self.main_queue_zombies.lock().unwrap();
+        let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
+        debug_assert!(
+            self.gpu_shader_resource_table.image_slots.dereference_id(&id).zombie == false,
+            "Detected free after free - Image is already a zombie."
+        );
+        self.gpu_shader_resource_table.image_slots.dereference_id_mut(&id).zombie = true;
+        lock.images.push_front((cpu_timeline_value, id));
     }
 
     fn zombify_image_view(&self, id: ImageViewId) {
-        todo!()
+        let mut lock = self.main_queue_zombies.lock().unwrap();
+        let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
+        lock.image_views.push_front((cpu_timeline_value, id));
     }
 
     fn zombify_sampler(&self, id: SamplerId) {
-        todo!()
+        let mut lock = self.main_queue_zombies.lock().unwrap();
+        let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
+        debug_assert!(
+            self.gpu_shader_resource_table.sampler_slots.dereference_id(&id).zombie == false,
+            "Detected free after free - Sampler is already a zombie."
+        );
+        self.gpu_shader_resource_table.sampler_slots.dereference_id_mut(&id).zombie = true;
+        lock.samplers.push_front((cpu_timeline_value, id));
     }
 
 

@@ -1,6 +1,9 @@
 pub mod core;
+pub mod types;
 pub mod context;
 pub mod device;
 pub mod command_list;
-pub mod semaphore;
 pub mod gpu_resources;
+pub mod semaphore;
+pub mod timeline_query;
+pub mod split_barrier;
