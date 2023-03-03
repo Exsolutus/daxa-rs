@@ -10,6 +10,7 @@ use ash::vk;
 use bitfield::*;
 use gpu_allocator::MemoryLocation;
 use std::{
+    borrow::Cow,
     fmt::Display,
 };
 
@@ -26,7 +27,7 @@ pub const NOT_OWNED_BY_SWAPCHAIN: i32 = -1;
 
 
 #[derive(ResourceId, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct GPUResourceId(pub u32);
+pub struct GPUResourceId(pub(crate) u32);
 
 #[derive(ResourceId, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct BufferId(pub u32);
@@ -38,7 +39,7 @@ impl Display for BufferId {
 }
 
 #[derive(ResourceId, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct ImageId(pub u32);
+pub struct ImageId(pub(crate) u32);
 
 impl ImageId {
     pub fn default_view(&self) -> ImageViewId {
@@ -53,18 +54,18 @@ impl Display for ImageId {
 }
 
 #[derive(ResourceId, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct ImageViewId(pub u32);
+pub struct ImageViewId(pub(crate) u32);
 
 #[derive(ResourceId, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct SamplerId(pub u32);
+pub struct SamplerId(pub(crate) u32);
 
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct BufferInfo {
     pub memory_location: MemoryLocation,
     pub size: u32,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 impl Default for BufferInfo {
@@ -72,12 +73,12 @@ impl Default for BufferInfo {
         Self {
             memory_location: MemoryLocation::GpuOnly,
             size: 0,
-            debug_name: ""
+            debug_name: "".into()
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ImageInfo {
     pub dimensions: u32,
     pub format: vk::Format,
@@ -88,7 +89,7 @@ pub struct ImageInfo {
     pub sample_count: u32,
     pub usage: vk::ImageUsageFlags,
     pub memory_flags: MemoryLocation,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 impl Default for ImageInfo {
@@ -103,18 +104,18 @@ impl Default for ImageInfo {
             sample_count: 1,
             usage: vk::ImageUsageFlags::default(),
             memory_flags: MemoryLocation::GpuOnly,
-            debug_name: ""
+            debug_name: "".into()
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ImageViewInfo {
     pub image_view_type: vk::ImageViewType,
     pub format: vk::Format,
     pub image: ImageId,
     pub subresource_range: vk::ImageSubresourceRange,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 impl Default for ImageViewInfo {
@@ -124,12 +125,12 @@ impl Default for ImageViewInfo {
             format: vk::Format::R8G8B8A8_UNORM,
             image: ImageId::default(),
             subresource_range: vk::ImageSubresourceRange::default(),
-            debug_name: ""
+            debug_name: "".into()
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct SamplerInfo {
     pub magnification_filter: vk::Filter,
     pub minification_filter: vk::Filter,
@@ -147,7 +148,7 @@ pub struct SamplerInfo {
     pub max_lod: f32,
     pub border_color: vk::BorderColor,
     pub enable_unnormalized_coordinates: bool,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 impl Default for SamplerInfo {
@@ -169,7 +170,7 @@ impl Default for SamplerInfo {
             max_lod: 1.0,
             border_color: vk::BorderColor::FLOAT_TRANSPARENT_BLACK,
             enable_unnormalized_coordinates: false,
-            debug_name: "",
+            debug_name: "".into(),
         }
     }
 }

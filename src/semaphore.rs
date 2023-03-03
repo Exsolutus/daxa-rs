@@ -3,6 +3,7 @@ use crate::{device::Device};
 use anyhow::{Result, Context};
 use ash::vk;
 use std::{
+    borrow::Cow,
     ffi::{
         CStr
     },
@@ -15,15 +16,16 @@ use std::{
 
 
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct BinarySemaphoreInfo {
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
-#[derive(Clone, Copy, Default)]
+
+#[derive(Clone, Default)]
 pub struct TimelineSemaphoreInfo {
     pub initial_value: u64,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>
 }
 
 
@@ -43,7 +45,7 @@ pub(crate) struct BinarySemaphoreInternal {
 
 // BinarySemaphore creation methods
 impl BinarySemaphore {
-    pub fn new(
+    pub(crate) fn new(
         device: Device,
         info: BinarySemaphoreInfo
     ) -> Result<Self> {
@@ -114,7 +116,7 @@ pub(crate) struct TimelineSemaphoreInternal {
 
 // TimelineSemaphore creation methods
 impl TimelineSemaphore {
-    pub fn new(
+    pub(crate) fn new(
         device: Device,
         info: TimelineSemaphoreInfo
     ) -> Result<Self> {

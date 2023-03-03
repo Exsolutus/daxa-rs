@@ -45,7 +45,7 @@ fn deferred_destruction() {
     let app = App::new();
 
     let mut command_list = app.device.create_command_list(CommandListInfo {
-        debug_name: "deferred_destruction command list"
+        debug_name: "deferred_destruction command list".into()
     }).unwrap();
 
     let buffer = app.device.create_buffer(BufferInfo {
@@ -95,7 +95,7 @@ fn copy() {
     let app = App::new();
 
     let mut command_list = app.device.create_command_list(CommandListInfo {
-        debug_name: "copy command list"
+        debug_name: "copy command list".into()
     }).unwrap();
 
     const SIZE_X: u32 = 3;
@@ -122,19 +122,19 @@ fn copy() {
     let staging_upload_buffer = app.device.create_buffer(BufferInfo {
         memory_location: MemoryLocation::CpuToGpu,
         size: size_of::<ImageArray>() as u32,
-        debug_name: "staging_upload_buffer",
+        debug_name: "staging_upload_buffer".into(),
     }).unwrap();
 
     let device_local_buffer = app.device.create_buffer(BufferInfo {
         memory_location: MemoryLocation::GpuOnly,
         size: size_of::<ImageArray>() as u32,
-        debug_name: "device_local_buffer",
+        debug_name: "device_local_buffer".into(),
     }).unwrap();
 
     let staging_readback_buffer = app.device.create_buffer(BufferInfo {
         memory_location: MemoryLocation::GpuToCpu,
         size: size_of::<ImageArray>() as u32,
-        debug_name: "staging_readback_buffer",
+        debug_name: "staging_readback_buffer".into(),
     }).unwrap();
 
     let image_1 = app.device.create_image(ImageInfo {
@@ -142,7 +142,7 @@ fn copy() {
         format: vk::Format::R32G32B32A32_SFLOAT,
         size: vk::Extent3D { width: SIZE_X, height: SIZE_Y, depth: SIZE_Z },
         usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC,
-        debug_name: "image_1",
+        debug_name: "image_1".into(),
         ..Default::default()
     }).unwrap();
 
@@ -151,13 +151,13 @@ fn copy() {
         format: vk::Format::R32G32B32A32_SFLOAT,
         size: vk::Extent3D { width: SIZE_X, height: SIZE_Y, depth: SIZE_Z },
         usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::TRANSFER_SRC,
-        debug_name: "image_2",
+        debug_name: "image_2".into(),
         ..Default::default()
     }).unwrap();
 
     let timeline_query_pool = app.device.create_timeline_query_pool(TimelineQueryPoolInfo {
         query_count: 2,
-        debug_name: "timeline_query"
+        debug_name: "timeline_query".into()
     }).unwrap();
 
     let buffer_ptr = unsafe {

@@ -109,7 +109,7 @@ pub(crate) struct CommandListInternal {
 
 // CommandList creation methods
 impl CommandList {
-    pub fn new(
+    pub(crate) fn new(
         device: Device,
         command_pool: vk::CommandPool,
         command_buffer: vk::CommandBuffer,
@@ -300,8 +300,37 @@ impl CommandList {
         todo!()
     }
 
-    pub fn clear_image(&self, info: ImageClearInfo) {
-        todo!()
+    pub fn clear_image(&mut self, info: &ImageClearInfo) {
+        let CommandListState::Recording(command_list) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+        };
+
+        command_list.flush_barriers();
+
+        if info.image_range.aspect_mask.contains(vk::ImageAspectFlags::COLOR) {
+            unsafe {
+                command_list.device.0.logical_device.cmd_clear_color_image(
+                    command_list.command_buffer,
+                    command_list.device.0.image_slot(info.image).image,
+                    info.image_layout,
+                    &info.clear_value.color,
+                    slice::from_ref(&info.image_range)
+                )
+            }
+        }
+
+        if info.image_range.aspect_mask.contains(vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL) {
+            unsafe {
+                command_list.device.0.logical_device.cmd_clear_depth_stencil_image(
+                    command_list.command_buffer,
+                    command_list.device.0.image_slot(info.image).image,
+                    info.image_layout,
+                    &info.clear_value.depth_stencil,
+                    slice::from_ref(&info.image_range)
+                )
+            }
+        }
     }
 
 

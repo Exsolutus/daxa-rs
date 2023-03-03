@@ -208,7 +208,7 @@ impl GPUShaderResourceTable {
 
                     for slot in page.as_ref().unwrap().iter() {
                         let mut handle_invalid = false;
-                        let mut debug_name = "";
+                        let mut debug_name = "".into();
                         let mut zombie = false;
 
                         if type_name::<T>() == type_name::<BufferSlot>() {

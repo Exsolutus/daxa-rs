@@ -5,7 +5,8 @@ use crate::{
     gpu_resources::*,
     semaphore::*,
     timeline_query::*,
-    split_barrier::*
+    split_barrier::*,
+    swapchain::*
 };
 
 use anyhow::{Context as _, Result};
@@ -16,6 +17,7 @@ use ash::{
 };
 use gpu_allocator::{vulkan::*, AllocatorDebugSettings, MemoryLocation};
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     ffi::{
         CStr,
@@ -47,7 +49,7 @@ pub use ash::vk::{
 
 
 
-type DeviceSelector = fn(&DeviceProperties) -> i32;
+pub type DeviceSelector = fn(&DeviceProperties) -> i32;
 
 pub fn default_device_selector(device_properties: &DeviceProperties) -> i32 {
     let mut score = 0;
@@ -62,17 +64,19 @@ pub fn default_device_selector(device_properties: &DeviceProperties) -> i32 {
     score
 }
 
-#[derive(Clone, Copy)]
+
+
+#[derive(Clone)]
 pub struct DeviceInfo {
     pub selector: DeviceSelector,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 impl Default for DeviceInfo {
     fn default() -> Self {
         Self {
             selector: default_device_selector,
-            debug_name: ""
+            debug_name: "".into()
         }
     }
 }
@@ -87,9 +91,9 @@ pub struct CommandSubmitInfo {
     pub signal_timeline_semaphores: Vec<(TimelineSemaphore, u64)>,
 }
 
-pub struct PresentInfo {
-    // wait_binary_semaphores: Vec<BinarySemaphore>, // TODO
-    // swapchain: Swapchain,
+pub struct PresentInfo<'a> {
+    pub wait_binary_semaphores: Vec<BinarySemaphore>,
+    pub swapchain: &'a Swapchain,
 }
 
 
@@ -98,11 +102,11 @@ pub struct PresentInfo {
 pub struct Device(pub(crate) Arc<DeviceInternal>);
 
 pub(crate) struct DeviceInternal {
-    context: Context,
+    pub context: Context,
     properties: DeviceProperties,
     info: DeviceInfo,
 
-    physical_device: PhysicalDevice,
+    pub physical_device: PhysicalDevice,
     pub logical_device: LogicalDevice,
 
     allocator: ManuallyDrop<Mutex<Allocator>>,
@@ -553,10 +557,10 @@ impl Device {
     // }
 
     
-    // #[inline]
-    // pub fn create_swapchain(&self, info: SwapchainInfo) -> Result<Swapchain> {
-    //     todo!()
-    // }
+    #[inline]
+    pub fn create_swapchain(&self, info: SwapchainInfo) -> Result<Swapchain> {
+        Swapchain::new(self.clone(), info)
+    }
 
     #[inline]
     pub fn create_command_list(&self, info: CommandListInfo) -> Result<CommandList> {
@@ -688,7 +692,29 @@ impl Device {
     }
 
     pub fn preset_frame(&self, info: PresentInfo) {
-        todo!()
+        let device = self.0.as_ref();
+        let swapchain = info.swapchain;
+
+        let submit_semaphore_waits: Vec<vk::Semaphore> = info.wait_binary_semaphores.iter()
+            .map(|semaphore| {
+                semaphore.0.semaphore
+            })
+            .collect();
+
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(&submit_semaphore_waits)
+            .swapchains(slice::from_ref(&swapchain.swapchain_handle.get()))
+            .image_indices(slice::from_ref(&swapchain.current_image_index.get()))
+            .build();
+
+        unsafe {
+            // We currently ignore VK_ERROR_OUT_OF_DATE_KHR, VK_ERROR_SURFACE_LOST_KHR and VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT
+            // because supposedly these kinds of things are not specified within the spec. This is also handled in Swapchain::acquire_next_image()
+            swapchain.api.queue_present(device.main_queue, &present_info)
+                .expect("Swapchain should present frame to surface.");
+        }
+
+        self.collect_garbage();
     }
 
     #[inline]
@@ -836,7 +862,7 @@ impl DeviceInternal {
     fn validate_image_subresource_range(&self, range: &vk::ImageSubresourceRange, id: ImageId) -> vk::ImageSubresourceRange {
         match range.level_count == u32::MAX || range.level_count == 0 {
             true => {
-                let image_info = self.image_slot(id).info;
+                let image_info = &self.image_slot(id).info;
                 vk::ImageSubresourceRange::builder()
                     .aspect_mask(image_info.aspect)
                     .base_mip_level(0)
@@ -859,7 +885,7 @@ impl DeviceInternal {
 
         debug_assert!(info.size > 0, "Buffers cannot be created with a size of zero.");
 
-        ret.info = info;
+        ret.info = info.clone();
 
         let usage_flags = vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
                                           | vk::BufferUsageFlags::TRANSFER_SRC
@@ -894,7 +920,7 @@ impl DeviceInternal {
             .lock()
             .unwrap()
             .allocate(&AllocationCreateDesc {
-                name: info.debug_name,
+                name: info.debug_name.as_ref(),
                 requirements,
                 location: info.memory_location,
                 linear: true
@@ -942,15 +968,73 @@ impl DeviceInternal {
         Ok(BufferId(id.0))
     }
 
-    fn new_swapchain_image(&self, swapchain_image: vk::Image, format: vk::Format, index: u32, usage: vk::ImageUsageFlags, info: ImageInfo) -> Result<ImageId> {
-        todo!()
+    pub fn new_swapchain_image(&self, swapchain_image: vk::Image, format: vk::Format, index: u32, usage: vk::ImageUsageFlags, info: ImageInfo) -> Result<ImageId> {
+        let (id, image_slot) = self.gpu_shader_resource_table.image_slots.new_slot();
+
+        let image_view_ci = vk::ImageViewCreateInfo::builder()
+            .image(swapchain_image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(info.format)
+            .components(*vk::ComponentMapping::builder()
+                .r(vk::ComponentSwizzle::IDENTITY)
+                .g(vk::ComponentSwizzle::IDENTITY)
+                .b(vk::ComponentSwizzle::IDENTITY)
+                .a(vk::ComponentSwizzle::IDENTITY)
+            )
+            .subresource_range(*vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1)
+            );
+
+        let image_view = unsafe {
+            self.logical_device.create_image_view(&image_view_ci, None)
+                .expect("ImageView should be created.")
+        };
+
+        let mut ret = ImageSlot {
+            info: info.clone(),
+            swapchain_image_index: index as i32,
+            image: swapchain_image,
+            view_slot: ImageViewSlot {
+                image_view,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        
+        #[cfg(debug_assertions)]
+        unsafe {
+            let image_name = format!("{} [Daxa Swapchain Image]\0", info.debug_name);
+            let image_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE)
+                .object_handle(vk::Handle::as_raw(ret.image))
+                .object_name(&CStr::from_ptr(image_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &image_name_info)?;
+
+            let image_view_name = format!("{} [Daxa Swapchain ImageView]\0", info.debug_name);
+            let image_view_name_info = vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(vk::ObjectType::IMAGE_VIEW)
+                .object_handle(vk::Handle::as_raw(ret.view_slot.image_view))
+                .object_name(&CStr::from_ptr(image_view_name.as_ptr() as *const i8));
+            self.context.debug_utils().set_debug_utils_object_name(self.logical_device.handle(), &image_view_name_info)?;
+        }
+
+        self.gpu_shader_resource_table.write_descriptor_set_image(&self.logical_device, ret.view_slot.image_view, info.usage, id.index());
+
+        *image_slot = ret;
+
+        Ok(ImageId(id.0))
     }
 
     fn new_image(&self, info: ImageInfo) -> Result<ImageId> {
         let (id, image_slot_variant) = self.gpu_shader_resource_table.image_slots.new_slot();
 
         let mut ret = ImageSlot {
-            info,
+            info: info.clone(),
             view_slot: ImageViewSlot {
                 info: ImageViewInfo {
                     image_view_type: vk::ImageViewType::from_raw(info.dimensions as i32),
@@ -963,7 +1047,7 @@ impl DeviceInternal {
                         base_array_layer: 0,
                         layer_count: info.array_layer_count
                     },
-                    debug_name: info.debug_name
+                    debug_name: info.debug_name.clone()
                 },
                 ..Default::default()
             },
@@ -1019,7 +1103,7 @@ impl DeviceInternal {
             .lock()
             .unwrap()
             .allocate(&AllocationCreateDesc {
-                name: info.debug_name,
+                name: info.debug_name.as_ref(),
                 requirements,
                 location: info.memory_flags,
                 linear: false
@@ -1094,7 +1178,7 @@ impl DeviceInternal {
         let parent_image_slot = self.image_slot(info.image);
 
         let mut ret = ImageViewSlot {
-            info,
+            info: info.clone(),
             ..Default::default()
         };
 
@@ -1138,7 +1222,7 @@ impl DeviceInternal {
     fn new_sampler(&self, info: SamplerInfo) -> Result<SamplerId> {
         let (id, ret) = self.gpu_shader_resource_table.sampler_slots.new_slot();
 
-        ret.info = info;
+        ret.info = info.clone();
         ret.zombie = false;
 
         let mut sampler_reduction_mode_ci = vk::SamplerReductionModeCreateInfo::builder()
@@ -1217,7 +1301,7 @@ impl DeviceInternal {
     }
 
 
-    fn zombify_buffer(&self, id: BufferId) {
+    pub fn zombify_buffer(&self, id: BufferId) {
         let mut lock = self.main_queue_zombies.lock().unwrap();
         let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
         debug_assert!(
@@ -1228,7 +1312,7 @@ impl DeviceInternal {
         lock.buffers.push_front((cpu_timeline_value, id));
     }
 
-    fn zombify_image(&self, id: ImageId) {
+    pub fn zombify_image(&self, id: ImageId) {
         let mut lock = self.main_queue_zombies.lock().unwrap();
         let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
         debug_assert!(
@@ -1239,13 +1323,13 @@ impl DeviceInternal {
         lock.images.push_front((cpu_timeline_value, id));
     }
 
-    fn zombify_image_view(&self, id: ImageViewId) {
+    pub fn zombify_image_view(&self, id: ImageViewId) {
         let mut lock = self.main_queue_zombies.lock().unwrap();
         let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
         lock.image_views.push_front((cpu_timeline_value, id));
     }
 
-    fn zombify_sampler(&self, id: SamplerId) {
+    pub fn zombify_sampler(&self, id: SamplerId) {
         let mut lock = self.main_queue_zombies.lock().unwrap();
         let cpu_timeline_value = self.main_queue_cpu_timeline.load(Ordering::Acquire);
         debug_assert!(

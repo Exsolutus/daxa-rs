@@ -7,6 +7,7 @@ use ash::vk;
 
 
 
+// Constants
 pub const MAX_PUSH_CONSTANT_WORD_SIZE: u32 = 32;
 pub const MAX_PUSH_CONSTANT_BYTE_SIZE: u32 = MAX_PUSH_CONSTANT_WORD_SIZE * 4;
 pub const PIPELINE_LAYOUT_COUNT: u32 = MAX_PUSH_CONSTANT_WORD_SIZE + 1;
@@ -14,6 +15,11 @@ pub const MAX_PUSH_CONSTANT_SIZE_ERROR: &str = concat!("Push constant size is li
 
 
 
+// Types
+
+
+
+// Traits
 pub trait ResourceId {
     fn is_empty(&self) -> bool;
 
@@ -23,11 +29,11 @@ pub trait ResourceId {
     fn set_version(&mut self, index: u8);
 }
 
-pub trait Slot {
+pub(crate) trait Slot {
     fn is_zombie(&self) -> bool;
 }
 
-pub trait Set {
+pub(crate) trait Set {
     fn contains(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersects(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersect(&self, other: vk::ImageSubresourceRange) -> vk::ImageSubresourceRange;

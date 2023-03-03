@@ -4,11 +4,13 @@ use anyhow::{Context as _, Result};
 
 use ash::{
     extensions::ext::DebugUtils,
+    Entry,
     Instance,
     vk,
 };
 
 use std::{
+    borrow::Cow,
     ffi::{CStr, CString},
     ops::Deref,
     os::raw::{c_char, c_void},
@@ -73,7 +75,7 @@ fn default_validation_callback(
 
 
 pub struct ContextInfo {
-    pub application_name: &'static str,
+    pub application_name: Cow<'static, str>,
     pub application_version: u32,
     #[cfg(debug_assertions)] pub validation_callback: ValidationCallback
 }
@@ -81,7 +83,7 @@ pub struct ContextInfo {
 impl Default for ContextInfo {
     fn default() -> Self {
         Self {
-            application_name: "Daxa Vulkan App",
+            application_name: "Daxa Vulkan App".into(),
             application_version: 0,
             #[cfg(debug_assertions)] validation_callback: default_validation_callback
         }
@@ -91,11 +93,12 @@ impl Default for ContextInfo {
 
 
 #[derive(Clone)]
-pub struct Context(Arc<ContextInternal>);
+pub struct Context(pub(crate) Arc<ContextInternal>);
 
-struct ContextInternal {
-    instance: Instance,
-    info: Box<ContextInfo>,
+pub(crate) struct ContextInternal {
+    pub entry: Entry,
+    pub instance: Instance,
+    pub info: Box<ContextInfo>,
     #[cfg(debug_assertions)] _debug_utils: DebugUtils,
     #[cfg(debug_assertions)] _debug_utils_messenger: DebugUtilsMessenger,
 }
@@ -146,7 +149,7 @@ impl Context {
 
         // Create Vulkan instance
         let application_info = vk::ApplicationInfo::builder()
-            .application_name(CString::new(info.application_name)?.as_c_str())
+            .application_name(CString::new(&*info.application_name)?.as_c_str())
             .application_version(info.application_version)
             .engine_name(CString::new("daxa")?.as_c_str())
             .engine_version(vk::make_api_version(0, 1, 0, 0))
@@ -191,6 +194,7 @@ impl Context {
         };
 
         Ok(Self(Arc::new(ContextInternal {
+            entry,
             instance,
             info,
             #[cfg(debug_assertions)] _debug_utils,
@@ -235,7 +239,7 @@ impl Context {
         let device_properties = unsafe { self.get_physical_device_properties(physical_device) };
 
         let logical_device = Device::new(device_info, device_properties, self.clone(), physical_device)
-            .expect("Device should be created.");
+                .expect("Device should be created.");
 
         Ok(logical_device)
     }

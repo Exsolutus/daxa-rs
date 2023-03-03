@@ -186,6 +186,7 @@ dependencies = [
  "daxa_derive",
  "glfw",
  "gpu-allocator",
+ "raw-window-handle",
 ]
 
 [[package]]

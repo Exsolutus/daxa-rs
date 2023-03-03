@@ -35,7 +35,7 @@ fn device_selection() {
 
             score
         },
-        debug_name: "My device",
+        debug_name: "My device".into(),
     });
 
     assert!(device.is_ok());

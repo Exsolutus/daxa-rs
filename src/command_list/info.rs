@@ -7,10 +7,14 @@ use super::{
 
 use ash::vk;
 
+use std::{
+    borrow::Cow,
+};
+
 
 #[derive(Default)]
 pub struct CommandListInfo {
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 
@@ -33,19 +37,19 @@ impl Default for ImageBlitInfo {
             src_image_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
             dst_image: Default::default(),
             dst_image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            src_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            src_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             src_offsets: Default::default(),
-            dst_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            dst_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             dst_offsets: Default::default(),
             filter: Default::default()
         }
@@ -80,12 +84,12 @@ impl Default for BufferImageCopyInfo {
             buffer_offset: Default::default(),
             image: Default::default(),
             image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            image_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            image_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             image_offset: Default::default(),
             image_extent: Default::default()
         }
@@ -108,12 +112,12 @@ impl Default for ImageBufferCopyInfo {
         Self {
             image: Default::default(),
             image_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            image_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            image_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             image_offset: Default::default(),
             image_extent: Default::default(),
             buffer: Default::default(),
@@ -140,21 +144,21 @@ impl Default for ImageCopyInfo {
         Self {
             src_image: Default::default(),
             src_image_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            src_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            src_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             src_offset: Default::default(),
             dst_image: Default::default(),
             dst_image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            dst_layers: vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build(),
+            dst_layers: vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             dst_offset: Default::default(),
             extent: Default::default(),
         }
@@ -174,7 +178,13 @@ impl Default for ImageClearInfo {
         Self {
             image: Default::default(),
             image_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            image_range: Default::default(),
+            image_range: vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1
+            },
             clear_value: Default::default()
         }
     }

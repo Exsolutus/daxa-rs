@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use ash::vk;
 
 use std::{
+    borrow::Cow,
     ffi::CStr,
     sync::{
         Arc,
@@ -16,7 +17,7 @@ use std::{
 #[derive(Default)]
 pub struct TimelineQueryPoolInfo {
     pub query_count: u32,
-    pub debug_name: &'static str,
+    pub debug_name: Cow<'static, str>,
 }
 
 
@@ -37,7 +38,7 @@ pub(crate) struct TimelineQueryPoolInternal {
 
 // TimelineQueryPool creation methods
 impl TimelineQueryPool {
-    pub fn new(device: Device, info: TimelineQueryPoolInfo) -> Result<Self> {
+    pub(crate) fn new(device: Device, info: TimelineQueryPoolInfo) -> Result<Self> {
         let query_pool_ci = vk::QueryPoolCreateInfo::builder()
             .query_type(vk::QueryType::TIMESTAMP)
             .query_count(info.query_count);

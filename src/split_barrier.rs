@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use ash::vk;
 
 use std::{
+    borrow::Cow,
     ffi::CStr,
     sync::{
         atomic::Ordering
@@ -50,7 +51,7 @@ impl Default for ImageBarrierInfo {
 
 #[derive(Clone)]
 pub struct SplitBarrierInfo {
-    pub debug_name: &'static str
+    pub debug_name: Cow<'static, str>
 }
 
 pub struct SplitBarrierSignalInfo<'a> {
@@ -78,7 +79,7 @@ pub struct SplitBarrierState {
 
 // SplitBarrierState creation methods
 impl SplitBarrierState {
-    pub fn new(device: Device, info: SplitBarrierInfo) -> Result<Self> {
+    pub(crate) fn new(device: Device, info: SplitBarrierInfo) -> Result<Self> {
         let event_ci = vk::EventCreateInfo::builder()
             .flags(vk::EventCreateFlags::DEVICE_ONLY);
 
