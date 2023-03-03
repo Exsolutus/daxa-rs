@@ -493,13 +493,13 @@ impl Device {
 
 
     #[inline]
-    pub fn info_buffer(&self, id: BufferId) -> BufferInfo {
-        todo!()
+    pub fn info_buffer(&self, id: BufferId) -> &BufferInfo {
+        &self.0.buffer_slot(id).info
     }
 
     #[inline]
     pub fn get_device_address(&self, id: BufferId) -> vk::DeviceAddress {
-        todo!()
+        self.0.buffer_slot(id).device_address
     }
 
     #[inline]
@@ -526,18 +526,18 @@ impl Device {
     }
 
     #[inline]
-    pub fn info_image(&self, id: ImageId) -> ImageInfo {
-        todo!()
+    pub fn info_image(&self, id: ImageId) -> &ImageInfo {
+        &self.0.image_slot(id).info
     }
 
     #[inline]
-    pub fn info_image_view(&self, id: ImageViewId) -> ImageViewInfo {
-        todo!()
+    pub fn info_image_view(&self, id: ImageViewId) -> &ImageViewInfo {
+        &self.0.image_view_slot(id).info
     }
 
     #[inline]
-    pub fn info_sampler(&self, id: SamplerId) -> SamplerInfo {
-        todo!()
+    pub fn info_sampler(&self, id: SamplerId) -> &SamplerInfo {
+        &self.0.sampler_slot(id).info
     }
 
 
@@ -581,10 +581,10 @@ impl Device {
         TimelineSemaphore::new(self.clone(), info)
     }
 
-    // #[inline]
-    // pub fn create_split_barrier(&self, info: SplitBarrierInfo) -> Result<SplitBarrierState> {
-    //     todo!()
-    // }
+    #[inline]
+    pub fn create_split_barrier(&self, info: SplitBarrierInfo) -> Result<SplitBarrierState> {
+        SplitBarrierState::new(self.clone(), info)
+    }
 
 
     #[inline]
@@ -875,8 +875,12 @@ impl DeviceInternal {
         }
     }
 
-    fn validate_image_view_subresource_range(&self, slice: &vk::ImageSubresourceRange, id: ImageViewId) -> vk::ImageSubresourceRange {
-        todo!()
+    fn validate_image_view_subresource_range(&self, range: &vk::ImageSubresourceRange, id: ImageViewId) -> vk::ImageSubresourceRange {
+        if range.level_count == u32::MAX || range.level_count == 0 {
+            return self.image_view_slot(id).info.subresource_range;
+        }
+
+        *range
     }
 
 
@@ -1285,19 +1289,19 @@ impl DeviceInternal {
 
 
     fn buffer_slot_mut(&self, id: BufferId) -> &mut BufferSlot {
-        todo!()
+        self.gpu_shader_resource_table.buffer_slots.dereference_id_mut(&id)
     }
 
     fn image_slot_mut(&self, id: ImageId) -> &mut ImageSlot {
-        todo!()
+        self.gpu_shader_resource_table.image_slots.dereference_id_mut(&id)
     }
 
     fn image_view_slot_mut(&self, id: ImageViewId) -> &mut ImageViewSlot {
-        todo!()
+        &mut self.gpu_shader_resource_table.image_slots.dereference_id_mut(&id).view_slot
     }
 
     fn sampler_slot_mut(&self, id: SamplerId) -> &mut SamplerSlot {
-        todo!()
+        self.gpu_shader_resource_table.sampler_slots.dereference_id_mut(&id)
     }
 
 

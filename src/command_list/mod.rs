@@ -296,8 +296,24 @@ impl CommandList {
     }
 
 
-    pub fn clear_buffer(&self, info: BufferClearInfo) {
-        todo!()
+    pub fn clear_buffer(&mut self, info: BufferClearInfo) {
+        let CommandListState::Recording(command_list) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+        };
+
+        command_list.flush_barriers();
+
+        unsafe {
+            let device = &command_list.device.0;
+            device.logical_device.cmd_fill_buffer(
+                command_list.command_buffer,
+                device.buffer_slot(info.buffer).buffer,
+                info.offset,
+                info.size,
+                info.clear_value
+            )
+        }
     }
 
     pub fn clear_image(&mut self, info: &ImageClearInfo) {
