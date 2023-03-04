@@ -118,7 +118,7 @@ pub(crate) struct DeviceInternal {
     main_queue_gpu_timeline_semaphore: vk::Semaphore,
 
     // GPU resource table
-    gpu_shader_resource_table: GPUShaderResourceTable,
+    pub gpu_shader_resource_table: GPUShaderResourceTable,
 
     null_sampler: vk::Sampler,
     buffer_device_address_buffer: vk::Buffer,

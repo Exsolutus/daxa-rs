@@ -29,7 +29,7 @@ pub(crate) struct GPUShaderResourceTable {
 
     // Contains pipeline layouts with varying push constant range size.
     // The first size is 0 word, second is 1 word, all others are a power of two (maximum is MAX_PUSH_CONSTANT_BYTE_SIZE).
-    pipeline_layouts: [vk::PipelineLayout; PIPELINE_LAYOUT_COUNT as usize],
+    pub pipeline_layouts: [vk::PipelineLayout; PIPELINE_LAYOUT_COUNT as usize],
 }
 
 impl GPUShaderResourceTable {

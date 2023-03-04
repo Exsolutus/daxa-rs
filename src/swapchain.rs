@@ -116,14 +116,6 @@ pub struct Swapchain {
     pub(crate) current_image_index: Cell<u32>
 }
 
-// impl Deref for Swapchain {
-//     type Target = vk::SwapchainKHR;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.swapchain_handle
-//     }
-// }
-
 // Swapchain creation methods
 impl Swapchain {
     pub(crate) fn new(device: Device, info: SwapchainInfo) -> Result<Self> {

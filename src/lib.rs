@@ -8,3 +8,4 @@ pub mod semaphore;
 pub mod timeline_query;
 pub mod split_barrier;
 pub mod swapchain;
+pub mod pipeline;
