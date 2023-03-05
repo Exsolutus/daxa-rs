@@ -6,7 +6,8 @@ use crate::{
     semaphore::*,
     timeline_query::*,
     split_barrier::*,
-    swapchain::*
+    swapchain::*, 
+    pipeline::*
 };
 
 use anyhow::{Context as _, Result};
@@ -546,15 +547,15 @@ impl Device {
     //     todo!()
     // }
 
-    // #[inline]
-    // pub fn create_raster_pipeline(&self, info: RasterPipelineInfo) -> Result<RasterPipeline> {
-    //     todo!()
-    // }
+    #[inline]
+    pub fn create_raster_pipeline(&self, info: RasterPipelineInfo) -> Result<RasterPipeline> {
+        RasterPipeline::new(self.clone(), info)
+    }
 
-    // #[inline]
-    // pub fn create_compute_pipeline(&self, info: ComputePipelineInfo) -> Result<ComputePipeline> {
-    //     todo!()
-    // }
+    #[inline]
+    pub fn create_compute_pipeline(&self, info: ComputePipelineInfo) -> Result<ComputePipeline> {
+        ComputePipeline::new(self.clone(), info)
+    }
 
     
     #[inline]
