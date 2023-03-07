@@ -355,7 +355,8 @@ impl Device {
                 name: format!("{} [Daxa Device Buffer Device Address Buffer]", device_info.debug_name).as_str(),
                 requirements,
                 location: MemoryLocation::CpuToGpu,
-                linear: true
+                linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged
             }
         ).context("Allocator should allocate memory for buffer.")?;
 
@@ -928,7 +929,8 @@ impl DeviceInternal {
                 name: info.debug_name.as_ref(),
                 requirements,
                 location: info.memory_location,
-                linear: true
+                linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged
             })
             .context("Buffer memory should be allocated.")?;
 
@@ -1111,7 +1113,8 @@ impl DeviceInternal {
                 name: info.debug_name.as_ref(),
                 requirements,
                 location: info.memory_flags,
-                linear: false
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged
             })
             .context("Image memory should be allocated.")?;
 
