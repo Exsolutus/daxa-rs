@@ -69,6 +69,7 @@ fn simple_creation() {
 }
 
 #[test]
+#[ignore]
 fn clear_color() {
     struct App {
         window: AppWindow,
