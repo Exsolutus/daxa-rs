@@ -32,7 +32,7 @@ fn simplest() {
     let command_list = app.device.create_command_list(CommandListInfo::default()).unwrap();
 
     // Command lists must be completed before submission!
-    let command_list = command_list.complete().unwrap();
+    let command_list = command_list.complete();
 
     app.device.submit_commands(CommandSubmitInfo {
         command_lists: vec![command_list],
@@ -75,7 +75,7 @@ fn deferred_destruction() {
     command_list.destroy_sampler_deferred(sampler);
 
     // The gpu resources are still alive, as long as this command list is not submitted and has not finished execution.
-    let command_list = command_list.complete().unwrap();
+    let command_list = command_list.complete();
 
     // Even after this call the resources will still be alive, as zombie resources are not checked to be dead in submit calls.
     app.device.submit_commands(CommandSubmitInfo {
@@ -285,7 +285,7 @@ fn copy() {
         query_index: 1
     });
 
-    let command_list = command_list.complete().unwrap();
+    let command_list = command_list.complete();
 
     app.device.submit_commands(CommandSubmitInfo {
         command_lists: vec![command_list],

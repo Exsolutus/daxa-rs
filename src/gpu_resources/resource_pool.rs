@@ -192,7 +192,7 @@ impl<ResourceT: Slot + Default + std::fmt::Debug> GPUShaderResourcePool<Resource
 
         // Increment version
         let (_, version) = pages[page].as_mut().unwrap().get_mut(offset).unwrap();
-        *version = (*version + 1).max(1); // the max is needed, as version = 0 is invalid
+        *version = (*version).wrapping_add(1).max(1); // the max is needed, as version = 0 is invalid
 
         page_alloc_mtx.free_index_stack.push(id.index());
     }

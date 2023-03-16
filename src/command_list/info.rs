@@ -11,6 +11,17 @@ use std::{
     borrow::Cow,
 };
 
+// reexport
+pub use {
+    vk::{
+        AttachmentLoadOp,
+        ImageLayout,
+        ClearValue,
+        ClearColorValue,
+        ClearDepthStencilValue
+    },
+};
+
 
 #[derive(Default)]
 pub struct CommandListInfo {
@@ -279,7 +290,7 @@ impl Default for DrawIndexedInfo {
 
 pub struct DrawIndirectInfo {
     pub draw_command_buffer: BufferId,
-    pub draw_command_buffer_read_offset: usize,
+    pub draw_command_buffer_read_offset: vk::DeviceSize,
     pub draw_count: u32,
     pub draw_command_stride: u32,
     pub is_indexed: bool
@@ -300,9 +311,9 @@ impl Default for DrawIndirectInfo {
 
 pub struct DrawIndirectCountInfo {
     pub draw_command_buffer: BufferId,
-    pub draw_command_buffer_read_offset: usize,
+    pub draw_command_buffer_read_offset: vk::DeviceSize,
     pub draw_count_buffer: BufferId,
-    pub draw_count_buffer_read_offset: usize,
+    pub draw_count_buffer_read_offset: vk::DeviceSize,
     pub max_draw_count: u32,
     pub draw_command_stride: u32,
     pub is_indexed: bool

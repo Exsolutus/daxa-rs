@@ -33,7 +33,7 @@ pub(crate) trait Slot {
     fn is_zombie(&self) -> bool;
 }
 
-pub(crate) trait Set {
+pub trait Set {
     fn contains(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersects(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersect(&self, other: vk::ImageSubresourceRange) -> vk::ImageSubresourceRange;

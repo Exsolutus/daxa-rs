@@ -23,16 +23,16 @@ fn binary_semaphore() {
     let app = App::new();
 
     let command_list1 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-    let command_list1 = command_list1.complete().unwrap();
+    let command_list1 = command_list1.complete();
 
     let command_list2 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-    let command_list2 = command_list2.complete().unwrap();
+    let command_list2 = command_list2.complete();
 
     let command_list3 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-    let command_list3 = command_list3.complete().unwrap();
+    let command_list3 = command_list3.complete();
 
     let command_list4 = app.device.create_command_list(CommandListInfo::default()).unwrap();
-    let command_list4 = command_list4.complete().unwrap();
+    let command_list4 = command_list4.complete();
 
     let binary_semaphore1 = app.device.create_binary_semaphore(BinarySemaphoreInfo::default()).unwrap();
     let binary_semaphore2 = app.device.create_binary_semaphore(BinarySemaphoreInfo::default()).unwrap();

@@ -8,10 +8,16 @@ use crate::core::*;
 
 use ash::vk;
 use bitfield::*;
-use gpu_allocator::MemoryLocation;
 use std::{
     borrow::Cow,
     fmt::Display,
+};
+
+// reexport
+pub use {
+    gpu_allocator::MemoryLocation,
+    vk::ImageSubresourceRange,
+    vk::ImageAspectFlags
 };
 
 

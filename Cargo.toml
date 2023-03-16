@@ -9,7 +9,7 @@ edition = "2021"
 default = [
     "gpu_id_validation", 
     "pipeline_manager", 
-    "conservative_rasterization"
+    # "conservative_rasterization"
 ]
 gpu_id_validation = []
 pipeline_manager = []
@@ -17,6 +17,7 @@ conservative_rasterization = []
 
 [dependencies]
 daxa_derive = { path = "./src/daxa_derive" }
+daxa_shared = { path = "./src/daxa_shared" }
 
 anyhow = "1.0.66"
 ash = { version = "0.37.1", features = ["linked"] }
@@ -24,6 +25,17 @@ ash-window = "0.12.0"
 bitfield = "0.14.0"
 gpu-allocator = "0.22.0"
 raw-window-handle = "0.5.0"
+spirv-builder = { version = "0.4.0", features = ["watch"] }
+spirv-std = { version = "0.4.0", features = ["glam"] }
+
+
+[patch.crates-io]
+rustc_codegen_spirv = { git = "https://github.com/LykenSol/rust-gpu", branch = "buffer-interface-block" }
+
 
 [dev-dependencies]
 glfw = "0.51.0"
+
+common = { path = "./common" }
+rectangle_cutting_shaders_shared = { path = "./examples/0_rectangle_cutting/shaders_shared" }
+

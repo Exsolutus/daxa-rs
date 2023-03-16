@@ -9,3 +9,4 @@ pub mod timeline_query;
 pub mod split_barrier;
 pub mod swapchain;
 pub mod pipeline;
+pub mod util;

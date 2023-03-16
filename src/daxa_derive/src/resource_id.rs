@@ -20,9 +20,9 @@ pub fn impl_resource_id(ast: &syn::DeriveInput) -> TokenStream {
             bitfield_fields! {
                 u32;
                 #[inline]
-                index, set_index: 24, 0;
+                index, set_index: 23, 0;
                 #[inline]
-                u8, version, set_version: 31, 25;
+                u8, version, set_version: 31, 24;
             }
 
             #[inline]

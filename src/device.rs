@@ -142,7 +142,7 @@ pub(crate) struct MainQueueZombies {
     pub samplers: VecDeque<(u64, SamplerId)>,
     pub semaphores: VecDeque<(u64, SemaphoreZombie)>,
     pub split_barriers: VecDeque<(u64, SplitBarrierZombie)>,
-    // pub pipelines: VecDeque<(u64, PipelineZombie)>,
+    pub pipelines: VecDeque<(u64, PipelineZombie)>,
     pub timeline_query_pools: VecDeque<(u64, TimelineQueryPoolZombie)>,
 }
 
@@ -168,7 +168,7 @@ impl Device {
 
                 None
             }) else {
-                #[cfg(debug_assertions)]
+                //#[cfg(debug_assertions)]
                 panic!("No suitable queue family found.");
             };
 
@@ -243,6 +243,9 @@ impl Device {
             .scalar_block_layout(true)
             .build();
 
+        let mut required_physical_device_features_vulkan_memory_model = vk::PhysicalDeviceVulkanMemoryModelFeatures::builder()
+            .vulkan_memory_model(true);
+
         let mut physical_device_features_2 = vk::PhysicalDeviceFeatures2::builder()
             .push_next(&mut required_physical_device_features_buffer_device_address)
             .push_next(&mut required_physical_device_features_descriptor_indexing)
@@ -254,6 +257,7 @@ impl Device {
             .push_next(&mut required_physical_device_features_synchronization_2)
             .push_next(&mut required_physical_device_features_robustness_2)
             .push_next(&mut required_physical_device_features_scalar_layout)
+            .push_next(&mut required_physical_device_features_vulkan_memory_model)
             .features(required_physical_device_features)
             .build();
 
@@ -262,7 +266,7 @@ impl Device {
             ash::extensions::khr::Swapchain::name().as_ptr(),
             vk::ExtDescriptorIndexingFn::name().as_ptr(),
             vk::ExtShaderImageAtomicInt64Fn::name().as_ptr(),
-            vk::ExtMultiDrawFn::name().as_ptr(),
+            //vk::ExtMultiDrawFn::name().as_ptr(),
             #[cfg(conservative_rasterization)]
             vk::ExtConservativeRasterizationFn::name().as_ptr()
         ];
@@ -528,6 +532,36 @@ impl Device {
     }
 
     #[inline]
+    pub fn get_host_mapped_slice<T>(&self, id: BufferId) -> Option<&[T]> {
+        // NOTE(exsolutus) returning Option for user handling instead of debug-only panic
+        // debug_assert!(
+        //     self.0.buffer_slot(id).allocation.mapped_ptr().is_some(),
+        //     "Host buffer address is only available for buffers created with the following memory locations:\n\tMemoryLocation::CpuToGpu \n\tMemoryLocation::GpuToCpu"
+        // );
+        match self.0.buffer_slot(id).allocation.mapped_slice() {
+            Some(address) => unsafe {
+                Some(address.align_to::<T>().1)
+            },
+            None => None
+        }
+    }
+
+    #[inline]
+    pub fn get_host_mapped_slice_mut<T>(&self, id: BufferId) -> Option<&mut [T]> {
+        // NOTE(exsolutus) returning Option for user handling instead of debug-only panic
+        // debug_assert!(
+        //     self.0.buffer_slot(id).allocation.mapped_ptr().is_some(),
+        //     "Host buffer address is only available for buffers created with the following memory locations:\n\tMemoryLocation::CpuToGpu \n\tMemoryLocation::GpuToCpu"
+        // );
+        match self.0.buffer_slot_mut(id).allocation.mapped_slice_mut() {
+            Some(address) => unsafe {
+                Some(address.align_to_mut::<T>().1)
+            },
+            None => None
+        }
+    }
+
+    #[inline]
     pub fn info_image(&self, id: ImageId) -> &ImageInfo {
         &self.0.image_slot(id).info
     }
@@ -621,7 +655,9 @@ impl Device {
                 match &command_list.0 {
                     CommandListState::Recording(_) => {
                         #[cfg(debug_assertions)]
-                        panic!("Command lists must be completed before submission.")
+                        panic!("Command lists must be completed before submission.");
+                        #[cfg(not(debug_assertions))]
+                        unreachable!();
                     },
                     CommandListState::Completed(internal) => {
                         for (id, index) in internal.deferred_destructions.as_slice() {
@@ -821,13 +857,13 @@ impl DeviceInternal {
             },
             gpu_timeline_value
         );
-        // check_and_cleanup_gpu_resource::<PipelineZombie>(
-        //     &mut zombies.pipelines,
-        //     &|zombie| {
-        //         unsafe { self.logical_device.destroy_pipeline(zombie.pipeline, None) };
-        //     },
-        //     gpu_timeline_value
-        // );
+        check_and_cleanup_gpu_resource::<PipelineZombie>(
+            &mut zombies.pipelines,
+            &|zombie| {
+                unsafe { self.logical_device.destroy_pipeline(zombie.pipeline, None) };
+            },
+            gpu_timeline_value
+        );
         check_and_cleanup_gpu_resource::<SemaphoreZombie>(
             &mut zombies.semaphores,
             &|zombie| {

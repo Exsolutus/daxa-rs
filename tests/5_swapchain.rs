@@ -8,7 +8,6 @@ use daxa_rs::{
     swapchain::*, 
 };
 
-mod common;
 use common::window::AppWindow;
 
 use ash::vk;
@@ -37,7 +36,7 @@ fn simple_creation() {
             let window  = AppWindow::new(format!("{} (simple_creation)", APPNAME).as_str());
 
             let context = Context::new(ContextInfo {
-                application_name: format!("{} context (simple_creation)", APPNAME_PREFIX).into(),
+                application_name: format!("{} (simple_creation)", APPNAME).into(),
                 application_version: 1,
                 ..Default::default()
             }).unwrap();
@@ -173,7 +172,7 @@ fn clear_color() {
                 ..Default::default()
             });
 
-            let command_list = command_list.complete().unwrap();
+            let command_list = command_list.complete();
 
             device.submit_commands(CommandSubmitInfo {
                 command_lists: vec![command_list],

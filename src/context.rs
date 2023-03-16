@@ -121,7 +121,7 @@ impl Context {
         let mut info = Box::new(info);
 
         // Define instance layers and extensions to request
-        let layer_names = Vec::from([
+        let layer_names: Vec<&str> = Vec::from([
             #[cfg(debug_assertions)]
             "VK_LAYER_KHRONOS_validation"
         ]);

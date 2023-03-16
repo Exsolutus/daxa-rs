@@ -2,6 +2,7 @@ mod info;
 pub use info::*;
 
 use crate::{
+    core::*,
     device::{Device, DeviceInternal},
     gpu_resources::{
         GPUResourceId,
@@ -10,7 +11,8 @@ use crate::{
         ImageViewId,
         SamplerId
     },
-    split_barrier::*
+    split_barrier::*,
+    pipeline::*
 };
 use anyhow::{Result, bail};
 use ash::vk;
@@ -103,7 +105,7 @@ pub(crate) struct CommandListInternal {
     memory_barrier_batch_count: usize,
     image_barrier_batch_count: usize,
     split_barrier_batch_count: usize,
-    // pipeline_layouts: [vk::PipelineLayout; PIPELINE_LAYOUT_COUNT as usize],
+    pipeline_layouts: [vk::PipelineLayout; PIPELINE_LAYOUT_COUNT as usize],
     pub deferred_destructions: Vec<(GPUResourceId, u8)>
 }
 
@@ -137,6 +139,8 @@ impl CommandList {
             device.debug_utils().set_debug_utils_object_name(device.0.logical_device.handle(), &command_pool_name_info)?;
         }
 
+        let pipeline_layouts = device.0.gpu_shader_resource_table.pipeline_layouts;
+
         Ok(Self(CommandListState::Recording(Box::new(CommandListInternal {
             device,
             info,
@@ -147,7 +151,7 @@ impl CommandList {
             memory_barrier_batch_count: 0,
             image_barrier_batch_count: 0,
             split_barrier_batch_count: 0,
-            // pipeline_layouts: Default::default(),
+            pipeline_layouts,
             deferred_destructions: vec![]
         }))))
     }
@@ -169,129 +173,139 @@ impl Clone for CommandList {
 // CommandList usage methods
 impl CommandList {
     pub fn copy_buffer_to_buffer(&mut self, info: BufferCopyInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                let buffer_copy = vk::BufferCopy::builder()
-                    .src_offset(info.src_offset)
-                    .dst_offset(info.dst_offset)
-                    .size(info.size);
+        internal.flush_barriers();
 
-                unsafe { 
-                    internal.device.0.logical_device.cmd_copy_buffer(
-                        internal.command_buffer,
-                        internal.device.0.buffer_slot(info.src_buffer).buffer,
-                        internal.device.0.buffer_slot(info.dst_buffer).buffer,
-                        slice::from_ref(&buffer_copy)
-                    );
-                }
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        let buffer_copy = vk::BufferCopy::builder()
+            .src_offset(info.src_offset)
+            .dst_offset(info.dst_offset)
+            .size(info.size);
+
+        unsafe { 
+            internal.device.0.logical_device.cmd_copy_buffer(
+                internal.command_buffer,
+                internal.device.0.buffer_slot(info.src_buffer).buffer,
+                internal.device.0.buffer_slot(info.dst_buffer).buffer,
+                slice::from_ref(&buffer_copy)
+            );
         }
     }
 
     pub fn copy_buffer_to_image(&mut self, info: BufferImageCopyInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                let buffer_image_copy = vk::BufferImageCopy::builder()
-                    .buffer_offset(info.buffer_offset)
-                    .image_subresource(info.image_layers)
-                    .image_offset(info.image_offset)
-                    .image_extent(info.image_extent);
+        internal.flush_barriers();
 
-                unsafe { 
-                    internal.device.0.logical_device.cmd_copy_buffer_to_image(
-                        internal.command_buffer,
-                        internal.device.0.buffer_slot(info.buffer).buffer,
-                        internal.device.0.image_slot(info.image).image,
-                        info.image_layout,
-                        slice::from_ref(&buffer_image_copy)
-                    );
-                }
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        let buffer_image_copy = vk::BufferImageCopy::builder()
+            .buffer_offset(info.buffer_offset)
+            .image_subresource(info.image_layers)
+            .image_offset(info.image_offset)
+            .image_extent(info.image_extent);
+
+        unsafe { 
+            internal.device.0.logical_device.cmd_copy_buffer_to_image(
+                internal.command_buffer,
+                internal.device.0.buffer_slot(info.buffer).buffer,
+                internal.device.0.image_slot(info.image).image,
+                info.image_layout,
+                slice::from_ref(&buffer_image_copy)
+            );
         }
     }
 
     pub fn copy_image_to_buffer(&mut self, info: ImageBufferCopyInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                let buffer_image_copy = vk::BufferImageCopy::builder()
-                    .buffer_offset(info.buffer_offset)
-                    .image_subresource(info.image_layers)
-                    .image_offset(info.image_offset)
-                    .image_extent(info.image_extent);
+        internal.flush_barriers();
 
-                unsafe { 
-                    internal.device.0.logical_device.cmd_copy_image_to_buffer(
-                        internal.command_buffer,
-                        internal.device.0.image_slot(info.image).image,
-                        info.image_layout,
-                        internal.device.0.buffer_slot(info.buffer).buffer,
-                        slice::from_ref(&buffer_image_copy)
-                    );
-                }
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        let buffer_image_copy = vk::BufferImageCopy::builder()
+            .buffer_offset(info.buffer_offset)
+            .image_subresource(info.image_layers)
+            .image_offset(info.image_offset)
+            .image_extent(info.image_extent);
+
+        unsafe { 
+            internal.device.0.logical_device.cmd_copy_image_to_buffer(
+                internal.command_buffer,
+                internal.device.0.image_slot(info.image).image,
+                info.image_layout,
+                internal.device.0.buffer_slot(info.buffer).buffer,
+                slice::from_ref(&buffer_image_copy)
+            );
         }
     }
 
     pub fn copy_image_to_image(&mut self, info: ImageCopyInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                let image_copy = vk::ImageCopy::builder()
-                    .src_subresource(info.src_layers)
-                    .src_offset(info.src_offset)
-                    .dst_subresource(info.dst_layers)
-                    .dst_offset(info.dst_offset)
-                    .extent(info.extent);
+        internal.flush_barriers();
 
-                unsafe { 
-                    internal.device.0.logical_device.cmd_copy_image(
-                        internal.command_buffer,
-                        internal.device.0.image_slot(info.src_image).image,
-                        info.src_image_layout,
-                        internal.device.0.image_slot(info.dst_image).image,
-                        info.dst_image_layout,
-                        slice::from_ref(&image_copy)
-                    )
-                }
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        let image_copy = vk::ImageCopy::builder()
+            .src_subresource(info.src_layers)
+            .src_offset(info.src_offset)
+            .dst_subresource(info.dst_layers)
+            .dst_offset(info.dst_offset)
+            .extent(info.extent);
+
+        unsafe { 
+            internal.device.0.logical_device.cmd_copy_image(
+                internal.command_buffer,
+                internal.device.0.image_slot(info.src_image).image,
+                info.src_image_layout,
+                internal.device.0.image_slot(info.dst_image).image,
+                info.dst_image_layout,
+                slice::from_ref(&image_copy)
+            )
         }
     }
 
     pub fn blit_image_to_image(&mut self, info: ImageBlitInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                let image_blit = vk::ImageBlit::builder()
-                    .src_subresource(info.src_layers)
-                    .src_offsets(info.src_offsets)
-                    .dst_subresource(info.dst_layers)
-                    .dst_offsets(info.dst_offsets);
+        internal.flush_barriers();
 
-                unsafe { 
-                    internal.device.0.logical_device.cmd_blit_image(
-                        internal.command_buffer,
-                        internal.device.0.image_slot(info.src_image).image,
-                        info.src_image_layout,
-                        internal.device.0.image_slot(info.dst_image).image,
-                        info.dst_image_layout,
-                        slice::from_ref(&image_blit),
-                        info.filter
-                    )
-                }
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        let image_blit = vk::ImageBlit::builder()
+            .src_subresource(info.src_layers)
+            .src_offsets(info.src_offsets)
+            .dst_subresource(info.dst_layers)
+            .dst_offsets(info.dst_offsets);
+
+        unsafe { 
+            internal.device.0.logical_device.cmd_blit_image(
+                internal.command_buffer,
+                internal.device.0.image_slot(info.src_image).image,
+                info.src_image_layout,
+                internal.device.0.image_slot(info.dst_image).image,
+                info.dst_image_layout,
+                slice::from_ref(&image_blit),
+                info.filter
+            )
         }
     }
 
@@ -300,6 +314,8 @@ impl CommandList {
         let CommandListState::Recording(command_list) = &mut self.0 else {
             #[cfg(debug_assertions)]
             panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
         };
 
         command_list.flush_barriers();
@@ -320,6 +336,8 @@ impl CommandList {
         let CommandListState::Recording(command_list) = &mut self.0 else {
             #[cfg(debug_assertions)]
             panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
         };
 
         command_list.flush_barriers();
@@ -351,46 +369,55 @@ impl CommandList {
 
 
     pub fn pipeline_barrier(&mut self, info: MemoryBarrierInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                if internal.memory_barrier_batch_count == COMMAND_LIST_BARRIER_MAX_BATCH_SIZE {
-                    internal.flush_barriers();
-                }
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                internal.memory_barrier_batch[internal.memory_barrier_batch_count] = vk::MemoryBarrier2::builder()
-                    .src_stage_mask(info.awaited_pipeline_access.0)
-                    .src_access_mask(info.awaited_pipeline_access.1)
-                    .dst_stage_mask(info.waiting_pipeline_access.0)
-                    .dst_access_mask(info.waiting_pipeline_access.1)
-                    .build();
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        if internal.memory_barrier_batch_count == COMMAND_LIST_BARRIER_MAX_BATCH_SIZE {
+            internal.flush_barriers();
         }
+
+        internal.memory_barrier_batch[internal.memory_barrier_batch_count] = vk::MemoryBarrier2 {
+            src_stage_mask: info.awaited_pipeline_access.0,
+            src_access_mask: info.awaited_pipeline_access.1,
+            dst_stage_mask: info.waiting_pipeline_access.0,
+            dst_access_mask: info.waiting_pipeline_access.1,
+            ..Default::default()
+        };
+
+        internal.memory_barrier_batch_count += 1;
     }
 
     pub fn pipeline_barrier_image_transition(&mut self, info: ImageBarrierInfo) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                if internal.image_barrier_batch_count == COMMAND_LIST_BARRIER_MAX_BATCH_SIZE {
-                    internal.flush_barriers();
-                }
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                internal.image_barrier_batch[internal.image_barrier_batch_count] = vk::ImageMemoryBarrier2::builder()
-                    .src_stage_mask(info.awaited_pipeline_access.0)
-                    .src_access_mask(info.awaited_pipeline_access.1)
-                    .dst_stage_mask(info.waiting_pipeline_access.0)
-                    .dst_access_mask(info.waiting_pipeline_access.1)
-                    .old_layout(info.before_layout)
-                    .new_layout(info.after_layout)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(internal.device.0.image_slot(info.image).image)
-                    .subresource_range(info.range)
-                    .build();
-                internal.image_barrier_batch_count += 1;
-            },
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
+        if internal.image_barrier_batch_count == COMMAND_LIST_BARRIER_MAX_BATCH_SIZE {
+            internal.flush_barriers();
         }
+
+        internal.image_barrier_batch[internal.image_barrier_batch_count] = vk::ImageMemoryBarrier2 {
+            src_stage_mask:info.awaited_pipeline_access.0,
+            src_access_mask: info.awaited_pipeline_access.1,
+            dst_stage_mask: info.waiting_pipeline_access.0,
+            dst_access_mask: info.waiting_pipeline_access.1,
+            old_layout: info.before_layout,
+            new_layout: info.after_layout,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image: internal.device.0.image_slot(info.image).image,
+            subresource_range: info.range,
+            ..Default::default()
+        };
+
+        internal.image_barrier_batch_count += 1;
     }
 
     pub fn signal_split_barrier(&self, info: SplitBarrierSignalInfo) {
@@ -414,37 +441,125 @@ impl CommandList {
     //     todo!()
     // }
 
-    pub fn push_constant<T>(&self, data: &[T], offset: u32) {
-        todo!()
+    pub fn push_constant<T>(&mut self, data: &T, offset: u32) {
+        let size = std::mem::size_of::<T>();
+        debug_assert!(size <= MAX_PUSH_CONSTANT_BYTE_SIZE as usize, "{}", MAX_PUSH_CONSTANT_SIZE_ERROR);
+        debug_assert!(size % 4 == 0, "Push constant must have an alignment of 4.");
+
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe {
+            let (_, bytes, _) = slice::from_ref(data).align_to::<u8>();
+
+            internal.device.0.logical_device.cmd_push_constants(
+                internal.command_buffer,
+                internal.pipeline_layouts[(size + 3) / 4],
+                vk::ShaderStageFlags::ALL,
+                offset,
+                bytes
+            )
+        }
     }
 
-    // pub fn set_pipeline(&self, pipeline: ComputePipeline) {
-    //     todo!()
-    // }
+    pub fn set_compute_pipeline(&mut self, pipeline: ComputePipeline) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-    // pub fn set_pipeline(&self, pipeline: RasterPipeline) {
-    //     todo!()
-    // }
+        internal.flush_barriers();
 
-    pub fn dispatch(&self, group_x: u32, group_y: u32, group_z: u32) {
-        todo!()
+        unsafe {
+            let logical_device = &internal.device.0.logical_device;
+
+            logical_device.cmd_bind_descriptor_sets(
+                internal.command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline.0.pipeline_layout,
+                0,
+                slice::from_ref(&internal.device.0.gpu_shader_resource_table.descriptor_set),
+                &[]
+            );
+
+            logical_device.cmd_bind_pipeline(internal.command_buffer, vk::PipelineBindPoint::COMPUTE, pipeline.0.pipeline);
+        };
     }
 
-    pub fn dispatch_indirect(&self, info: DispatchIndirectInfo) {
-        todo!()
+    pub fn set_raster_pipeline(&mut self, pipeline: RasterPipeline) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe {
+            let logical_device = &internal.device.0.logical_device;
+
+            logical_device.cmd_bind_descriptor_sets(
+                internal.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.0.pipeline_layout,
+                0,
+                slice::from_ref(&internal.device.0.gpu_shader_resource_table.descriptor_set),
+                &[]
+            );
+
+            logical_device.cmd_bind_pipeline(internal.command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline.0.pipeline);
+        };
+    }
+
+    pub fn dispatch(&mut self, group_x: u32, group_y: u32, group_z: u32) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe {
+            internal.device.0.logical_device.cmd_dispatch(internal.command_buffer, group_x, group_y, group_z);
+        };
+    }
+
+    pub fn dispatch_indirect(&mut self, info: DispatchIndirectInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe {
+            internal.device.0.logical_device.cmd_dispatch_indirect(internal.command_buffer, internal.device.0.buffer_slot(info.indirect_buffer).buffer, info.offset);
+        };
     }
 
 
     fn defer_destruction_helper(&mut self, id: GPUResourceId, index: u8) {
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.deferred_destructions.push((id, index));
-            },
-            CommandListState::Completed(_) => {
-                #[cfg(debug_assertions)]
-                panic!("Can't record commands on a completed command list.")
-            }
-        }
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.deferred_destructions.push((id, index));
     }
 
     pub fn destroy_buffer_deferred(&mut self, id: BufferId) {
@@ -464,24 +579,128 @@ impl CommandList {
     }
 
 
-    pub fn begin_renderpass(&self, info: RenderPassBeginInfo) {
-        todo!()
+    pub fn begin_renderpass(&mut self, info: RenderPassBeginInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        let fill_rendering_attachment_info = |info: &RenderAttachmentInfo| -> vk::RenderingAttachmentInfo {
+            debug_assert!(!info.image_view.is_empty(), "Must provide valid image view to render attachment.");
+
+            vk::RenderingAttachmentInfo::builder()
+                .image_view(internal.device.0.image_view_slot(info.image_view).image_view)
+                .image_layout(info.layout)
+                .resolve_mode(vk::ResolveModeFlags::NONE)
+                .resolve_image_view(vk::ImageView::null())
+                .resolve_image_layout(vk::ImageLayout::UNDEFINED)
+                .load_op(info.load_op)
+                .store_op(info.store_op)
+                .clear_value(info.clear_value)
+                .build()
+        };
+
+        debug_assert!(
+            info.color_attachments.len() <= COMMAND_LIST_COLOR_ATTACHMENT_MAX,
+            "Too many color attachments. Make a pull request to bump max."
+        );
+        let color_attachment_infos = info.color_attachments.iter().map(|color_info| {
+            fill_rendering_attachment_info(color_info)
+        })
+        .collect::<Vec<vk::RenderingAttachmentInfo>>();
+
+        let depth_attachment_info = match &info.depth_attachment {
+            Some(depth_info) => fill_rendering_attachment_info(&depth_info),
+            None => vk::RenderingAttachmentInfo::default()
+        };
+
+        let stencil_attachment_info = match &info.stencil_attachment {
+            Some(stencil_info) => fill_rendering_attachment_info(&stencil_info),
+            None => vk::RenderingAttachmentInfo::default()
+        };
+
+        let mut rendering_info = vk::RenderingInfo::builder()
+            .render_area(info.render_area)
+            .layer_count(1)
+            .color_attachments(&color_attachment_infos);
+        if info.depth_attachment.is_some() {
+            rendering_info = rendering_info.depth_attachment(&depth_attachment_info);
+        }
+        if info.stencil_attachment.is_some() {
+            rendering_info = rendering_info.stencil_attachment(&stencil_attachment_info);
+        }
+
+        let logical_device = &internal.device.0.logical_device;
+        unsafe { logical_device.cmd_set_scissor(internal.command_buffer, 0, slice::from_ref(&info.render_area)) };
+
+        let viewport = vk::Viewport::builder()
+            .x(info.render_area.offset.x as f32)
+            .y(info.render_area.offset.y as f32)
+            .width(info.render_area.extent.width as f32)
+            .height(info.render_area.extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0)
+            .build();
+
+        unsafe { logical_device.cmd_set_viewport(internal.command_buffer, 0, slice::from_ref(&viewport)) };
+        
+        unsafe { logical_device.cmd_begin_rendering(internal.command_buffer, &rendering_info) };
     }
 
-    pub fn end_renderpass(&self) {
-        todo!()
+    pub fn end_renderpass(&mut self) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe { internal.device.0.logical_device.cmd_end_rendering(internal.command_buffer) };
     }
 
-    // pub fn set_viewport(&self, info: ViewportInfo) {
-    //     todo!()
-    // }
+    pub fn set_viewport(&mut self, info: vk::Viewport) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-    pub fn set_scissor(&self, info: vk::Rect2D) {
-        todo!()
+        internal.flush_barriers();
+
+        unsafe { internal.device.0.logical_device.cmd_set_viewport(internal.command_buffer, 0, slice::from_ref(&info)) };
     }
 
-    pub fn set_depth_bias(&self, info: DepthBiasInfo) {
-        todo!()
+    pub fn set_scissor(&mut self, info: vk::Rect2D) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe { internal.device.0.logical_device.cmd_set_scissor(internal.command_buffer, 0, slice::from_ref(&info)) };
+    }
+
+    pub fn set_depth_bias(&mut self, info: DepthBiasInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+
+        unsafe { internal.device.0.logical_device.cmd_set_depth_bias(internal.command_buffer, info.constant_factor, info.clamp, info.slope_factor) };
     }
 
     pub fn set_index_buffer(&self, id: BufferId, offset: usize, index_type_byte_size: usize) {
@@ -490,68 +709,161 @@ impl CommandList {
 
 
     pub fn draw(&self, info: DrawInfo) {
-        todo!()
+        let CommandListState::Recording(internal) = &self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        unsafe {
+            internal.device.0.logical_device.cmd_draw(
+                internal.command_buffer,
+                info.vertex_count,
+                info.instance_count,
+                info.first_vertex,
+                info.first_instance
+            )
+        }
     }
 
     pub fn draw_indexed(&self, info: DrawIndexedInfo) {
-        todo!()
+        let CommandListState::Recording(internal) = &self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        unsafe {
+            internal.device.0.logical_device.cmd_draw_indexed(
+                internal.command_buffer,
+                info.index_count,
+                info.instance_count,
+                info.first_index,
+                info.vertex_offset,
+                info.first_instance
+            )
+        }
     }
 
     pub fn draw_indirect(&self, info: DrawIndirectInfo) {
-        todo!()
+        let CommandListState::Recording(internal) = &self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        unsafe {
+            if info.is_indexed {
+                internal.device.0.logical_device.cmd_draw_indexed_indirect(
+                    internal.command_buffer,
+                    internal.device.0.buffer_slot(info.draw_command_buffer).buffer,
+                    info.draw_command_buffer_read_offset,
+                    info.draw_count,
+                    info.draw_command_stride
+                );
+            } else {
+                internal.device.0.logical_device.cmd_draw_indirect(
+                    internal.command_buffer,
+                    internal.device.0.buffer_slot(info.draw_command_buffer).buffer,
+                    info.draw_command_buffer_read_offset,
+                    info.draw_count,
+                    info.draw_command_stride
+                );
+            }
+        }
     }
 
     pub fn draw_indirect_count(&self, info: DrawIndirectCountInfo) {
-        todo!()
+        let CommandListState::Recording(internal) = &self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        unsafe {
+            if info.is_indexed {
+                internal.device.0.logical_device.cmd_draw_indexed_indirect_count(
+                    internal.command_buffer,
+                    internal.device.0.buffer_slot(info.draw_command_buffer).buffer,
+                    info.draw_command_buffer_read_offset,
+                    internal.device.0.buffer_slot(info.draw_count_buffer).buffer,
+                    info.draw_count_buffer_read_offset,
+                    info.max_draw_count,
+                    info.draw_command_stride
+                );
+            } else {
+                internal.device.0.logical_device.cmd_draw_indirect_count(
+                    internal.command_buffer,
+                    internal.device.0.buffer_slot(info.draw_command_buffer).buffer,
+                    info.draw_command_buffer_read_offset,
+                    internal.device.0.buffer_slot(info.draw_count_buffer).buffer,
+                    info.draw_count_buffer_read_offset,
+                    info.max_draw_count,
+                    info.draw_command_stride
+                );
+            }
+        }
     }
 
 
     pub fn write_timestamp(&mut self, info: WriteTimestampInfo) {
         debug_assert!(info.query_index < info.query_pool.info().query_count, "Write index is out of bounds for the query pool.");
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
-                unsafe { internal.device.0.logical_device.cmd_write_timestamp(
-                    internal.command_buffer,
-                    info.stage,
-                    info.query_pool.0.timeline_query_pool,
-                    info.query_index)
-                };
-            }
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
-        }
+
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+        unsafe { internal.device.0.logical_device.cmd_write_timestamp(
+            internal.command_buffer,
+            info.stage,
+            info.query_pool.0.timeline_query_pool,
+            info.query_index)
+        };
     }
 
     pub fn reset_timestamps(&mut self, info: ResetTimestampsInfo) {
         debug_assert!(info.start_index < info.query_pool.info().query_count, "Reset index is out of bounds for the query pool.");
-        match &mut self.0 {
-            CommandListState::Recording(internal) => {
-                internal.flush_barriers();
-                unsafe { internal.device.0.logical_device.cmd_reset_query_pool(
-                    internal.command_buffer,
-                    info.query_pool.0.timeline_query_pool,
-                    info.start_index,
-                    info.count)
-                };
-            }
-            CommandListState::Completed(_) => panic!("CommandList is already completed.")
-        }
+
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+        unsafe { internal.device.0.logical_device.cmd_reset_query_pool(
+            internal.command_buffer,
+            info.query_pool.0.timeline_query_pool,
+            info.start_index,
+            info.count)
+        };
     }
 
 
-    pub fn complete(self) -> Result<CommandList> {
-        match self.0 {
-            CommandListState::Recording(mut internal) => {
-                internal.flush_barriers();
+    pub fn complete(self) -> CommandList {
+        let CommandListState::Recording(mut internal) = self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("CommandList is already completed.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
 
-                unsafe { internal.device.0.logical_device.end_command_buffer(internal.command_buffer).unwrap_unchecked() };
+        internal.flush_barriers();
 
-                Ok(CommandList(CommandListState::Completed(
-                    Arc::from(internal)
-                )))
-            },
-            CommandListState::Completed(_) => bail!("CommandList is already completed.")
-        }
+        unsafe { internal.device.0.logical_device.end_command_buffer(internal.command_buffer).unwrap_unchecked() };
+
+        CommandList(CommandListState::Completed(
+            Arc::from(internal)
+        ))
     }
 
     pub fn is_complete(&self) -> bool {

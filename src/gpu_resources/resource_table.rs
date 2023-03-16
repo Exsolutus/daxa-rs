@@ -24,7 +24,7 @@ pub(crate) struct GPUShaderResourceTable {
     pub sampler_slots: GPUShaderResourcePool<SamplerSlot>,
 
     descriptor_set_layout: vk::DescriptorSetLayout,
-    descriptor_set: vk::DescriptorSet,
+    pub descriptor_set: vk::DescriptorSet,
     descriptor_pool: vk::DescriptorPool,
 
     // Contains pipeline layouts with varying push constant range size.
