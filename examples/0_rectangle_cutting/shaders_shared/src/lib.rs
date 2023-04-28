@@ -5,16 +5,18 @@
 use spirv_std::glam;
 
 
-
+#[repr(C)]
 pub struct DrawVertex {
     pub position: glam::Vec4,
     pub color: glam::Vec4
 }
 
+#[repr(C)]
 pub struct DrawVertexBuffer {
     pub verts: [DrawVertex; 3]
 }
 
+#[repr(C)]
 pub struct DrawPush {
     pub face_buffer: u32
 }

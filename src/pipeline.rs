@@ -1,4 +1,4 @@
-use crate::{core::*, device::*};
+use crate::device::*;
 
 use anyhow::{Context, Result, bail};
 use ash::vk::{self, Offset2D, Extent2D};
@@ -9,11 +9,11 @@ use std::{
         CStr,
         CString
     },
-    mem::size_of,
     slice,
+    rc::Rc,
     sync::{
         atomic::Ordering,
-        Arc
+        Arc,
     }
 };
 
@@ -26,7 +26,9 @@ pub use vk::{
     CullModeFlags,
     FrontFace,
     PipelineColorBlendAttachmentState,
-    BlendFactor
+    BlendFactor,
+    BlendOp,
+    ColorComponentFlags
 };
 #[cfg(feature = "conservative_rasterization")]
 pub use vk::{
@@ -59,7 +61,7 @@ pub struct ComputePipelineInfo {
 }
 
 #[derive(Clone)]
-pub struct ComputePipeline(pub(crate) Arc<ComputePipelineInternal>);
+pub struct ComputePipeline(pub(crate) Rc<ComputePipelineInternal>);
 
 pub(crate) struct ComputePipelineInternal {
     device: Device,
@@ -110,10 +112,10 @@ impl ComputePipeline {
             device.debug_utils().set_debug_utils_object_name(device.0.logical_device.handle(), &pipeline_name_info)?;
         }
 
-        Ok(Self(Arc::new(ComputePipelineInternal {
+        Ok(Self(Rc::new(ComputePipelineInternal {
             device,
             info,
-            pipeline,
+            pipeline: pipeline.into(),
             pipeline_layout
         })))
     }

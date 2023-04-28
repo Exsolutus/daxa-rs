@@ -41,7 +41,7 @@ struct App {
     device: daxa_rs::device::Device,
     swapchain: daxa_rs::swapchain::Swapchain,
     pipeline_manager: pipeline_manager::PipelineManager,
-    raster_pipeline: daxa_rs::pipeline::RasterPipeline,
+    raster_pipeline: daxa_rs::util::pipeline_manager::PipelineId,
     vertex_buffer: daxa_rs::gpu_resources::BufferId,
     vertex_count: Cell<u32>,
     range_0: daxa_rs::gpu_resources::ImageSubresourceRange,
@@ -50,10 +50,10 @@ struct App {
 
 impl App {
     pub fn new() -> Self {
-        let window = window::AppWindow::new(format!("{}", APPNAME).as_str());
+        let window = window::AppWindow::new(APPNAME);
 
         let context = daxa_rs::context::Context::new(daxa_rs::context::ContextInfo {
-            application_name: format!("{}", APPNAME).into(),
+            application_name: APPNAME.into(),
             application_version: 1,
             ..Default::default()
         }).unwrap();
@@ -96,11 +96,11 @@ impl App {
 
         let raster_pipeline = pipeline_manager.add_raster_pipeline(RasterPipelineCompileInfo {
             vertex_shader_info: ShaderCompileInfo {
-                source: ShaderCrate("shaders".into()).into(),
+                source: ShaderCrate::from("shaders").into(),
                 compile_options: ShaderCompileOptions { entry_point: "main_vs", ..Default::default() }
             },
             fragment_shader_info: ShaderCompileInfo {
-                source: ShaderCrate("shaders".into()).into(),
+                source: ShaderCrate::from("shaders").into(),
                 compile_options: ShaderCompileOptions { entry_point: "main_fs", ..Default::default() }
             },
             color_attachments: vec![
@@ -112,6 +112,7 @@ impl App {
                         dst_color_blend_factor: pipeline::BlendFactor::ONE_MINUS_SRC_ALPHA,
                         src_alpha_blend_factor: pipeline::BlendFactor::ONE,
                         dst_alpha_blend_factor: pipeline::BlendFactor::ONE_MINUS_SRC_ALPHA,
+                        color_write_mask: pipeline::ColorComponentFlags::RGBA,
                         ..Default::default()
                     }
                 }
@@ -144,9 +145,9 @@ impl App {
 
         let range_1 = ImageSubresourceRange {
             aspect_mask: ImageAspectFlags::COLOR,
-            base_mip_level: 3,
-            level_count: 5,
-            base_array_layer: 2,
+            base_mip_level: 5,
+            level_count: 2,
+            base_array_layer: 3,
             layer_count: 4
         };
 
@@ -274,6 +275,10 @@ impl App {
     pub fn draw(&self) {
         //self.ui_update();
 
+        if let Err(error) = self.pipeline_manager.reload_all() {
+            println!("{}", error)
+        };
+
         let device = &self.device;
         let swapchain = &self.swapchain;
 
@@ -347,7 +352,7 @@ impl App {
             ..Default::default()
         });
 
-        command_list.set_raster_pipeline(self.raster_pipeline.clone());
+        command_list.set_raster_pipeline(self.pipeline_manager.get_raster_pipeline(self.raster_pipeline).unwrap());
 
         command_list.push_constant::<DrawPush>(&DrawPush {
                 face_buffer: self.vertex_buffer.index()

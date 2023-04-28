@@ -3,5 +3,4 @@
 // HACK(eddyb) can't easily see warnings otherwise from `spirv-builder` builds.
 #![deny(warnings)]
 
-#[cfg(target_arch = "spirv")]
-pub mod typed_buffer;
+// #[cfg(target_arch = "spirv")]

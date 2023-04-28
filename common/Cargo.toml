@@ -11,5 +11,5 @@ doctest = false
 glfw = "0.51.0"
 raw-window-handle = "0.5.0"
 
-spirv-std = { version = "0.4.0", features = ["glam"] }
+spirv-std = { version = "0.6.0" }
 

@@ -494,7 +494,7 @@ impl CommandList {
         };
     }
 
-    pub fn set_raster_pipeline(&mut self, pipeline: RasterPipeline) {
+    pub fn set_raster_pipeline(&mut self, pipeline: &RasterPipeline) {
         let CommandListState::Recording(internal) = &mut self.0 else {
             #[cfg(debug_assertions)]
             panic!("Can't record commands on a completed command list.");

@@ -38,7 +38,7 @@ fn simplest() {
 
     let compile_result = pipeline_manager.add_compute_pipeline(ComputePipelineCompileInfo {
         shader_info: ShaderCompileInfo {
-            source: ShaderCrate(PathBuf::from("shaders")).into(),
+            source: ShaderCrate::from("shaders").into(),
             compile_options: ShaderCompileOptions {
                 entry_point: "main_cs",
                 ..Default::default()

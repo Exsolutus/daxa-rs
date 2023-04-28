@@ -125,7 +125,7 @@ impl Set for vk::ImageSubresourceRange {
         let mip_case = ((b_mip_p1 < a_mip_p1) as u32) + ((b_mip_p0 > a_mip_p0) as u32) * 2;
         let arr_case = ((b_arr_p1 < a_arr_p1) as u32) + ((b_arr_p0 > a_arr_p0) as u32) * 2;
 
-        let mut result = ([vk::ImageSubresourceRange::default(); 4], 0usize);
+        let mut result = ([vk::ImageSubresourceRange::default(); 4], 0);
         if !self.intersects(other) {
             result.1 = 1;
             result.0[0] = *self;
@@ -189,17 +189,17 @@ impl Set for vk::ImageSubresourceRange {
         }
 
         let mip_bc = [
-            BaseAndCount { base: b_mip_p1 + 1, count: (a_mip_p1 + 1) - (b_mip_p1 + 1) },    // b1 -> a1
-            BaseAndCount { base: a_mip_p0, count: b_mip_p0 - a_mip_p0 },                    // a0 -> b0
-            BaseAndCount { base: a_mip_p0, count: (a_mip_p1 + 1) - a_mip_p0 },              // a0 -> a1
+            BaseAndCount { base: b_mip_p1 + 1, count: (a_mip_p1 + 1).wrapping_sub(b_mip_p1 + 1) },  // b1 -> a1
+            BaseAndCount { base: a_mip_p0, count: b_mip_p0.wrapping_sub(a_mip_p0) },                // a0 -> b0
+            BaseAndCount { base: a_mip_p0, count: (a_mip_p1 + 1).wrapping_sub(a_mip_p0) },          // a0 -> a1
         ];
         let arr_bc = [
-            BaseAndCount { base: b_arr_p1 + 1, count: (a_arr_p1 + 1) - (b_arr_p1 + 1) },    // b1 -> a1
-            BaseAndCount { base: a_arr_p0, count: b_arr_p0 - a_arr_p0 },                    // a0 -> b0
-            BaseAndCount { base: a_arr_p0, count: (a_arr_p1 + 1) - a_arr_p0 },              // a0 -> a1
-            BaseAndCount { base: a_arr_p0, count: (b_arr_p1 + 1) - a_arr_p0 },              // a0 -> b1
-            BaseAndCount { base: b_arr_p0, count: (b_arr_p1 + 1) - b_arr_p0 },              // b0 -> b1
-            BaseAndCount { base: b_arr_p0, count: (a_arr_p1 + 1) - b_arr_p0 },              // b0 -> a1
+            BaseAndCount { base: b_arr_p1 + 1, count: (a_arr_p1 + 1).wrapping_sub(b_arr_p1 + 1) },  // b1 -> a1
+            BaseAndCount { base: a_arr_p0, count: b_arr_p0.wrapping_sub(a_arr_p0) },                // a0 -> b0
+            BaseAndCount { base: a_arr_p0, count: (a_arr_p1 + 1).wrapping_sub(a_arr_p0) },          // a0 -> a1
+            BaseAndCount { base: a_arr_p0, count: (b_arr_p1 + 1).wrapping_sub(a_arr_p0) },          // a0 -> b1
+            BaseAndCount { base: b_arr_p0, count: (b_arr_p1 + 1).wrapping_sub(b_arr_p0) },          // b0 -> b1
+            BaseAndCount { base: b_arr_p0, count: (a_arr_p1 + 1).wrapping_sub(b_arr_p0) },          // b0 -> a1
         ];
 
         let result_index = (mip_case + arr_case * 4) as usize;
@@ -220,7 +220,7 @@ impl Set for vk::ImageSubresourceRange {
             rect_i.base_mip_level = mip_bc[bc_i.0].base;
             rect_i.level_count = mip_bc[bc_i.0].count;
             rect_i.base_array_layer = arr_bc[bc_i.1].base;
-            rect_i.layer_count = arr_bc[bc_i.1].base;
+            rect_i.layer_count = arr_bc[bc_i.1].count;
         }
 
         result
