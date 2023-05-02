@@ -106,7 +106,8 @@ pub(crate) struct CommandListInternal {
     image_barrier_batch_count: usize,
     split_barrier_batch_count: usize,
     pipeline_layouts: [vk::PipelineLayout; PIPELINE_LAYOUT_COUNT as usize],
-    pub deferred_destructions: Vec<(GPUResourceId, u8)>
+    pub deferred_destructions: Vec<(GPUResourceId, u8)>,
+    constant_buffer_bindings: [ConstantBufferInfo; CONSTANT_BUFFER_BINDINGS_COUNT as usize]
 }
 
 // CommandList creation methods
@@ -152,7 +153,8 @@ impl CommandList {
             image_barrier_batch_count: 0,
             split_barrier_batch_count: 0,
             pipeline_layouts,
-            deferred_destructions: vec![]
+            deferred_destructions: vec![],
+            constant_buffer_bindings: Default::default()
         }))))
     }
 }
@@ -441,7 +443,7 @@ impl CommandList {
     //     todo!()
     // }
 
-    pub fn push_constant<T>(&mut self, data: &T, offset: u32) {
+    pub fn set_push_constant<T>(&mut self, data: &T, offset: u32) {
         let size = std::mem::size_of::<T>();
         debug_assert!(size <= MAX_PUSH_CONSTANT_BYTE_SIZE as usize, "{}", MAX_PUSH_CONSTANT_SIZE_ERROR);
         debug_assert!(size % 4 == 0, "Push constant must have an alignment of 4.");
@@ -468,6 +470,37 @@ impl CommandList {
         }
     }
 
+    pub fn set_constant_buffer(&mut self, info: ConstantBufferInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        debug_assert!(info.size > 0, "Constant buffer size must be greater than 0.");
+        debug_assert!(
+            info.offset as u64 % internal.device.0.properties.limits.min_uniform_buffer_offset_alignment == 0,
+            "Constant buffer offset must respect uniform buffer alignment requirements."
+        );
+
+        let buffer_size = internal.device.0.buffer_slot(info.buffer).info.size;
+
+        debug_assert!(
+            info.size + info.offset <= buffer_size as u64,
+            "Constant buffer size, offset ({}, {}) must describe a valid range within the given buffer with size {}.",
+            info.size, info.offset, buffer_size
+        );
+        let slot = info.slot;
+        debug_assert!(
+            slot < CONSTANT_BUFFER_BINDINGS_COUNT as u32,
+            "Constant buffer slot must be in the range 0-{}.",
+            CONSTANT_BUFFER_BINDINGS_COUNT
+        );
+
+        internal.constant_buffer_bindings[slot as usize] = info;
+    }
+
     pub fn set_compute_pipeline(&mut self, pipeline: ComputePipeline) {
         let CommandListState::Recording(internal) = &mut self.0 else {
             #[cfg(debug_assertions)]
@@ -477,6 +510,7 @@ impl CommandList {
         };
 
         internal.flush_barriers();
+        internal.flush_constant_buffer_bindings(vk::PipelineBindPoint::COMPUTE, pipeline.0.pipeline_layout);
 
         unsafe {
             let logical_device = &internal.device.0.logical_device;
@@ -503,6 +537,7 @@ impl CommandList {
         };
 
         internal.flush_barriers();
+        internal.flush_constant_buffer_bindings(vk::PipelineBindPoint::GRAPHICS, pipeline.0.pipeline_layout);
 
         unsafe {
             let logical_device = &internal.device.0.logical_device;
@@ -900,6 +935,42 @@ impl CommandListInternal {
 
         self.memory_barrier_batch_count = 0;
         self.image_barrier_batch_count = 0;
+    }
+
+    fn flush_constant_buffer_bindings(&mut self, bind_point: vk::PipelineBindPoint, pipeline_layout: vk::PipelineLayout) {
+        let mut descriptor_buffer_info: [vk::DescriptorBufferInfo; CONSTANT_BUFFER_BINDINGS_COUNT as usize] = Default::default();
+        let mut descriptor_writes: [vk::WriteDescriptorSet; CONSTANT_BUFFER_BINDINGS_COUNT as usize] = Default::default();
+
+        for (index, constant_buffer_info) in self.constant_buffer_bindings.iter().enumerate() {
+            if constant_buffer_info.buffer.is_empty() {
+                descriptor_buffer_info[index] = vk::DescriptorBufferInfo::default()
+            } else {
+                descriptor_buffer_info[index] = vk::DescriptorBufferInfo {
+                    buffer: self.device.0.buffer_slot(constant_buffer_info.buffer).buffer,
+                    offset: constant_buffer_info.offset,
+                    range: constant_buffer_info.size
+                }
+            }
+
+            descriptor_writes[index] = vk::WriteDescriptorSet {
+                dst_binding: index as u32,
+                dst_array_element: 0,
+                descriptor_count: 1,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                p_buffer_info: &descriptor_buffer_info[index],
+                ..Default::default()
+            }
+        }
+
+        unsafe { self.device.0.push_descriptor.cmd_push_descriptor_set(
+            self.command_buffer, 
+            bind_point, 
+            pipeline_layout, 
+            CONSTANT_BUFFER_BINDINGS_SET, 
+            &descriptor_writes
+        )}
+
+        self.constant_buffer_bindings.fill(Default::default());
     }
 }
 

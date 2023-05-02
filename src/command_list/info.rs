@@ -29,6 +29,15 @@ pub struct CommandListInfo {
 }
 
 
+#[derive(Clone, Copy, Default)]
+pub struct ConstantBufferInfo {
+    pub slot: u32, // Binding slot the buffer will be bound to.
+    pub buffer: BufferId,
+    pub size: vk::DeviceSize,
+    pub offset: vk::DeviceSize
+}
+
+
 pub struct ImageBlitInfo {
     pub src_image: ImageId,
     pub src_image_layout: vk::ImageLayout,

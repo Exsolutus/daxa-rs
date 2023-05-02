@@ -104,11 +104,13 @@ pub struct Device(pub(crate) Arc<DeviceInternal>);
 
 pub(crate) struct DeviceInternal {
     pub context: Context,
-    properties: DeviceProperties,
+    pub properties: DeviceProperties,
     info: DeviceInfo,
 
     pub physical_device: PhysicalDevice,
     pub logical_device: LogicalDevice,
+
+    pub push_descriptor: ash::extensions::khr::PushDescriptor,
 
     allocator: ManuallyDrop<Mutex<Allocator>>,
 
@@ -266,6 +268,7 @@ impl Device {
             ash::extensions::khr::Swapchain::name().as_ptr(),
             vk::ExtDescriptorIndexingFn::name().as_ptr(),
             vk::ExtShaderImageAtomicInt64Fn::name().as_ptr(),
+            ash::extensions::khr::PushDescriptor::name().as_ptr(),
             //vk::ExtMultiDrawFn::name().as_ptr(),
             #[cfg(conservative_rasterization)]
             vk::ExtConservativeRasterizationFn::name().as_ptr()
@@ -281,6 +284,9 @@ impl Device {
             (*context).create_device(physical_device, &device_ci, None)
                 .context("Logical device should be created.")?
         };
+
+        // Create PushDescriptor extension access
+        let push_descriptor = ash::extensions::khr::PushDescriptor::new(&context.0.instance, &logical_device);
 
         // Create allocator
         let mut allocator = Allocator::new(
@@ -425,6 +431,8 @@ impl Device {
         
             physical_device,
             logical_device,
+
+            push_descriptor,
         
             allocator: ManuallyDrop::new(Mutex::new(allocator)),
         
