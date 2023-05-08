@@ -354,7 +354,7 @@ impl App {
 
         command_list.set_raster_pipeline(self.pipeline_manager.get_raster_pipeline(self.raster_pipeline).unwrap());
 
-        command_list.push_constant::<DrawPush>(&DrawPush {
+        command_list.set_push_constant::<DrawPush>(&DrawPush {
                 face_buffer: self.vertex_buffer.index()
             },
             0
