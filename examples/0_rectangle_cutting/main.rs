@@ -307,8 +307,8 @@ impl App {
         self.construct_scene(buffer_slice);
 
         command_list.pipeline_barrier(daxa_rs::split_barrier::MemoryBarrierInfo {
-            awaited_pipeline_access: daxa_rs::types::access_consts::HOST_WRITE,
-            waiting_pipeline_access: daxa_rs::types::access_consts::TRANSFER_READ,
+            src_access: daxa_rs::types::access_consts::HOST_WRITE,
+            dst_access: daxa_rs::types::access_consts::TRANSFER_READ,
         });
 
         command_list.copy_buffer_to_buffer(daxa_rs::command_list::BufferCopyInfo {
@@ -319,14 +319,14 @@ impl App {
         });
 
         command_list.pipeline_barrier(daxa_rs::split_barrier::MemoryBarrierInfo {
-            awaited_pipeline_access: daxa_rs::types::access_consts::TRANSFER_WRITE,
-            waiting_pipeline_access: daxa_rs::types::access_consts::VERTEX_SHADER_READ,
+            src_access: daxa_rs::types::access_consts::TRANSFER_WRITE,
+            dst_access: daxa_rs::types::access_consts::VERTEX_SHADER_READ,
         });
 
         command_list.pipeline_barrier_image_transition(daxa_rs::split_barrier::ImageBarrierInfo {
-            waiting_pipeline_access: daxa_rs::types::access_consts::COLOR_ATTACHMENT_OUTPUT_WRITE,
-            before_layout: vk::ImageLayout::UNDEFINED,
-            after_layout: vk::ImageLayout::ATTACHMENT_OPTIMAL,
+            dst_access: daxa_rs::types::access_consts::COLOR_ATTACHMENT_OUTPUT_WRITE,
+            src_layout: vk::ImageLayout::UNDEFINED,
+            dst_layout: vk::ImageLayout::ATTACHMENT_OPTIMAL,
             image: swapchain_image,
             ..Default::default()
         });
@@ -371,9 +371,9 @@ impl App {
 
         // Finalize command list
         command_list.pipeline_barrier_image_transition(daxa_rs::split_barrier::ImageBarrierInfo {
-            waiting_pipeline_access: daxa_rs::types::access_consts::ALL_GRAPHICS_READ_WRITE,
-            before_layout: vk::ImageLayout::ATTACHMENT_OPTIMAL,
-            after_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            dst_access: daxa_rs::types::access_consts::ALL_GRAPHICS_READ_WRITE,
+            src_layout: vk::ImageLayout::ATTACHMENT_OPTIMAL,
+            dst_layout: vk::ImageLayout::PRESENT_SRC_KHR,
             image: swapchain_image,
             ..Default::default()
         });

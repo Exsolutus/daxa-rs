@@ -15,16 +15,16 @@ use std::{
 
 #[derive(Default)]
 pub struct MemoryBarrierInfo {
-    pub awaited_pipeline_access: Access,
-    pub waiting_pipeline_access: Access
+    pub src_access: Access,
+    pub dst_access: Access
 }
 
 
 pub struct ImageBarrierInfo {
-    pub awaited_pipeline_access: Access,
-    pub waiting_pipeline_access: Access,
-    pub before_layout: vk::ImageLayout,
-    pub after_layout: vk::ImageLayout,
+    pub src_access: Access,
+    pub dst_access: Access,
+    pub src_layout: vk::ImageLayout,
+    pub dst_layout: vk::ImageLayout,
     pub range: vk::ImageSubresourceRange,
     pub image: ImageId
 }
@@ -32,10 +32,10 @@ pub struct ImageBarrierInfo {
 impl Default for ImageBarrierInfo {
     fn default() -> Self {
         Self {
-            awaited_pipeline_access: Default::default(),
-            waiting_pipeline_access: Default::default(),
-            before_layout: Default::default(),
-            after_layout: Default::default(),
+            src_access: Default::default(),
+            dst_access: Default::default(),
+            src_layout: Default::default(),
+            dst_layout: Default::default(),
             range: vk::ImageSubresourceRange::builder()
                 .aspect_mask(vk::ImageAspectFlags::COLOR)
                 .base_mip_level(0)

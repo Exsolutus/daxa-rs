@@ -383,10 +383,10 @@ impl CommandList {
         }
 
         internal.memory_barrier_batch[internal.memory_barrier_batch_count] = vk::MemoryBarrier2 {
-            src_stage_mask: info.awaited_pipeline_access.0,
-            src_access_mask: info.awaited_pipeline_access.1,
-            dst_stage_mask: info.waiting_pipeline_access.0,
-            dst_access_mask: info.waiting_pipeline_access.1,
+            src_stage_mask: info.src_access.0,
+            src_access_mask: info.src_access.1,
+            dst_stage_mask: info.dst_access.0,
+            dst_access_mask: info.dst_access.1,
             ..Default::default()
         };
 
@@ -406,12 +406,12 @@ impl CommandList {
         }
 
         internal.image_barrier_batch[internal.image_barrier_batch_count] = vk::ImageMemoryBarrier2 {
-            src_stage_mask:info.awaited_pipeline_access.0,
-            src_access_mask: info.awaited_pipeline_access.1,
-            dst_stage_mask: info.waiting_pipeline_access.0,
-            dst_access_mask: info.waiting_pipeline_access.1,
-            old_layout: info.before_layout,
-            new_layout: info.after_layout,
+            src_stage_mask: info.src_access.0,
+            src_access_mask: info.src_access.1,
+            dst_stage_mask: info.dst_access.0,
+            dst_access_mask: info.dst_access.1,
+            old_layout: info.src_layout,
+            new_layout: info.dst_layout,
             src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             image: internal.device.0.image_slot(info.image).image,

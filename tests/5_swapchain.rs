@@ -150,9 +150,9 @@ fn clear_color() {
             }).unwrap();
 
             command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-                waiting_pipeline_access: access_consts::TRANSFER_WRITE,
-                before_layout: vk::ImageLayout::UNDEFINED,
-                after_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                dst_access: access_consts::TRANSFER_WRITE,
+                src_layout: vk::ImageLayout::UNDEFINED,
+                dst_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 image: swapchain_image,
                 ..Default::default()
             });
@@ -165,9 +165,9 @@ fn clear_color() {
             });
 
             command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-                waiting_pipeline_access: access_consts::TRANSFER_WRITE,
-                before_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                after_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+                dst_access: access_consts::TRANSFER_WRITE,
+                src_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                dst_layout: vk::ImageLayout::PRESENT_SRC_KHR,
                 image: swapchain_image,
                 ..Default::default()
             });

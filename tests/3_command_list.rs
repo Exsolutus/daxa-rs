@@ -181,8 +181,8 @@ fn copy() {
     });
 
     command_list.pipeline_barrier(MemoryBarrierInfo {
-        awaited_pipeline_access: access_consts::HOST_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_READ
+        src_access: access_consts::HOST_WRITE,
+        dst_access: access_consts::TRANSFER_READ
     });
 
     command_list.copy_buffer_to_buffer(BufferCopyInfo {
@@ -194,14 +194,14 @@ fn copy() {
 
     // Barrier to make sure device_local_buffer is has no read after write hazard.
     command_list.pipeline_barrier(MemoryBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_READ
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::TRANSFER_READ
     });
 
     command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_WRITE,
-        after_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::TRANSFER_WRITE,
+        dst_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         image: image_1,
         ..Default::default()
     });
@@ -215,16 +215,16 @@ fn copy() {
     });
 
     command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_READ,
-        after_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::TRANSFER_READ,
+        dst_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         image: image_1,
         ..Default::default()
     });
 
     command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-        waiting_pipeline_access: access_consts::TRANSFER_WRITE,
-        after_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        dst_access: access_consts::TRANSFER_WRITE,
+        dst_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         image: image_2,
         ..Default::default()
     });
@@ -239,17 +239,17 @@ fn copy() {
     });
 
     command_list.pipeline_barrier_image_transition(ImageBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_READ,
-        after_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::TRANSFER_READ,
+        dst_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         image: image_2,
         ..Default::default()
     });
 
     // Barrier to make sure device_local_buffer is has no write after read hazard.
     command_list.pipeline_barrier(MemoryBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_READ,
-        waiting_pipeline_access: access_consts::TRANSFER_WRITE
+        src_access: access_consts::TRANSFER_READ,
+        dst_access: access_consts::TRANSFER_WRITE
     });
 
     command_list.copy_image_to_buffer(ImageBufferCopyInfo {
@@ -262,8 +262,8 @@ fn copy() {
 
     // Barrier to make sure device_local_buffer is has no read after write hazard.
     command_list.pipeline_barrier(MemoryBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::TRANSFER_READ
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::TRANSFER_READ
     });
 
     command_list.copy_buffer_to_buffer(BufferCopyInfo {
@@ -275,8 +275,8 @@ fn copy() {
 
     // Barrier to make sure staging_readback_buffer is has no read after write hazard.
     command_list.pipeline_barrier(MemoryBarrierInfo {
-        awaited_pipeline_access: access_consts::TRANSFER_WRITE,
-        waiting_pipeline_access: access_consts::HOST_READ
+        src_access: access_consts::TRANSFER_WRITE,
+        dst_access: access_consts::HOST_READ
     });
 
     command_list.write_timestamp(WriteTimestampInfo {
