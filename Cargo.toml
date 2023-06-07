@@ -14,12 +14,16 @@ edition = "2021"
 
 [features]
 default = [
-    "gpu_id_validation", 
-    "pipeline_manager", 
+    "gpu_id_validation",
+    "mem",
+    "pipeline_manager",
+    "task_graph",
     # "conservative_rasterization"
 ]
 gpu_id_validation = []
-pipeline_manager = []
+mem = []
+pipeline_manager = ["dep:spirv-builder", "dep:spirv-std"]
+task_graph = []
 conservative_rasterization = []
 
 [dependencies]
@@ -32,8 +36,8 @@ ash-window = "0.12.0"
 bitfield = "0.14.0"
 gpu-allocator = "0.22.0"
 raw-window-handle = "0.5.0"
-spirv-builder = { version = "0.6.0", features = ["watch"] }
-spirv-std = { version = "0.6.0" }
+spirv-builder = { version = "0.6.0", features = ["watch"], optional = true}
+spirv-std = { version = "0.6.0", optional = true}
 
 [patch.crates-io]
 rustc_codegen_spirv = { git = "https://github.com/LykenSol/rust-gpu", branch = "buffer-interface-block" }
