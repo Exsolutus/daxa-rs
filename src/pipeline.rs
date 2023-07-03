@@ -168,13 +168,7 @@ impl Default for DepthTestInfo {
     }
 }
 
-#[cfg(feature = "conservative_rasterization")]
-#[derive(Clone, Copy, Default)]
-pub struct ConservativeRasterInfo {
-    pub mode: ConservativeRasterizationMode,
-    pub size: f32
-}
-
+#[cfg(not(feature = "conservative_rasterization"))]
 #[derive(Clone, Copy)]
 pub struct RasterizerInfo {
     pub primitive_topology: PrimitiveTopology,
@@ -189,7 +183,30 @@ pub struct RasterizerInfo {
     pub depth_bias_clamp: f32,
     pub depth_bias_slope_factor: f32,
     pub line_width: f32,
-    #[cfg(feature = "conservative_rasterization")]
+}
+
+#[cfg(feature = "conservative_rasterization")]
+#[derive(Clone, Copy, Default)]
+pub struct ConservativeRasterInfo {
+    pub mode: ConservativeRasterizationMode,
+    pub size: f32
+}
+
+#[cfg(feature = "conservative_rasterization")]
+#[derive(Clone, Copy)]
+pub struct RasterizerInfo {
+    pub primitive_topology: PrimitiveTopology,
+    pub primitive_restart_enable: bool,
+    pub polygon_mode: PolygonMode,
+    pub face_culling: CullModeFlags,
+    pub front_face_winding: FrontFace,
+    pub rasterizer_discard_enable: bool,
+    pub depth_clamp_enable: bool,
+    pub depth_bias_enable: bool,
+    pub depth_bias_constant_factor: f32,
+    pub depth_bias_clamp: f32,
+    pub depth_bias_slope_factor: f32,
+    pub line_width: f32,
     pub conservative_raster_info: ConservativeRasterInfo
 }
 

@@ -1,4 +1,4 @@
-use daxa_rs::{types::*, context::*, device::*, gpu_resources::*, timeline_query::*, split_barrier::*};
+use daxa_rs::{types::*, context::*, device::*, gpu_resources::*, timeline_query::*, split_barrier::*, memory_block::AllocationInfo};
 use daxa_rs::command_list::*;
 use ash::vk;
 use gpu_allocator::MemoryLocation;
@@ -120,20 +120,20 @@ fn copy() {
     }
 
     let staging_upload_buffer = app.device.create_buffer(BufferInfo {
-        memory_location: MemoryLocation::CpuToGpu,
         size: size_of::<ImageArray>() as u32,
+        allocation_info: AllocationInfo::Automatic(MemoryLocation::CpuToGpu),
         debug_name: "staging_upload_buffer".into(),
     }).unwrap();
 
     let device_local_buffer = app.device.create_buffer(BufferInfo {
-        memory_location: MemoryLocation::GpuOnly,
         size: size_of::<ImageArray>() as u32,
+        allocation_info: AllocationInfo::Automatic(MemoryLocation::GpuOnly),
         debug_name: "device_local_buffer".into(),
     }).unwrap();
 
     let staging_readback_buffer = app.device.create_buffer(BufferInfo {
-        memory_location: MemoryLocation::GpuToCpu,
         size: size_of::<ImageArray>() as u32,
+        allocation_info: AllocationInfo::Automatic(MemoryLocation::GpuToCpu),
         debug_name: "staging_readback_buffer".into(),
     }).unwrap();
 

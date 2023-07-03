@@ -4,7 +4,8 @@ use rectangle_cutting_shaders_shared::*;
 
 use daxa_rs::{
     core::*,
-    util::pipeline_manager
+    util::pipeline_manager,
+    memory_block::AllocationInfo
 };
 
 use ash::vk; // TODO: reexport whatever we use from here through daxa_rs
@@ -127,8 +128,8 @@ impl App {
         use daxa_rs::gpu_resources::MemoryLocation;
 
         let vertex_buffer = device.create_buffer(BufferInfo {
-            memory_location: MemoryLocation::GpuOnly,
             size: MAX_VERTS * size_of::<DrawVertex>() as u32,
+            allocation_info: AllocationInfo::Automatic(MemoryLocation::GpuOnly),
             debug_name: format!("{} vertex_buffer", APPNAME_PREFIX).into(),
         }).unwrap();
 
@@ -297,8 +298,8 @@ impl App {
         use std::mem::size_of;
 
         let vertex_staging_buffer = device.create_buffer(BufferInfo {
-            memory_location: MemoryLocation::CpuToGpu,
             size: MAX_VERTS * size_of::<DrawVertex>() as u32,
+            allocation_info: AllocationInfo::Automatic(MemoryLocation::CpuToGpu),
             debug_name: format!("{} vertex_staging_buffer", APPNAME_PREFIX).into()
         }).unwrap();
         command_list.destroy_buffer_deferred(vertex_staging_buffer);

@@ -4,7 +4,10 @@ mod resource_pool;
 pub(crate) use resource_table::*;
 pub(crate) use resource_pool::*;
 
-use crate::core::*;
+use crate::{
+    core::*,
+    memory_block::AllocationInfo
+};
 
 use ash::vk;
 use bitfield::*;
@@ -69,16 +72,16 @@ pub struct SamplerId(pub(crate) u32);
 
 #[derive(Clone, Debug)]
 pub struct BufferInfo {
-    pub memory_location: MemoryLocation,
     pub size: u32,
+    pub allocation_info: AllocationInfo,
     pub debug_name: Cow<'static, str>,
 }
 
 impl Default for BufferInfo {
     fn default() -> Self {
         Self {
-            memory_location: MemoryLocation::GpuOnly,
             size: 0,
+            allocation_info: AllocationInfo::Automatic(MemoryLocation::GpuOnly),
             debug_name: "".into()
         }
     }
@@ -94,7 +97,7 @@ pub struct ImageInfo {
     pub array_layer_count: u32,
     pub sample_count: u32,
     pub usage: vk::ImageUsageFlags,
-    pub memory_flags: MemoryLocation,
+    pub allocation_info: AllocationInfo,
     pub debug_name: Cow<'static, str>,
 }
 
@@ -109,7 +112,7 @@ impl Default for ImageInfo {
             array_layer_count: 1,
             sample_count: 1,
             usage: vk::ImageUsageFlags::default(),
-            memory_flags: MemoryLocation::GpuOnly,
+            allocation_info: AllocationInfo::Automatic(MemoryLocation::GpuOnly),
             debug_name: "".into()
         }
     }

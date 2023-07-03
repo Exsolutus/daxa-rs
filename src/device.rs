@@ -3,6 +3,7 @@ use crate::{
     command_list::*,
     context::Context,
     gpu_resources::*,
+    memory_block::*,
     semaphore::*,
     timeline_query::*,
     split_barrier::*,
@@ -47,6 +48,7 @@ pub use ash::vk::{
     PhysicalDeviceProperties as DeviceProperties,
     PipelineStageFlags,
 };
+
 
 
 
@@ -112,7 +114,7 @@ pub(crate) struct DeviceInternal {
 
     pub push_descriptor: ash::extensions::khr::PushDescriptor,
 
-    allocator: ManuallyDrop<Mutex<Allocator>>,
+    pub allocator: ManuallyDrop<Mutex<Allocator>>,
 
     // Main queue
     main_queue: vk::Queue,
@@ -335,7 +337,7 @@ impl Device {
                                 .min(1000);
 
         // Images and buffers can be set to be a null descriptor.
-        // Null descriptors are not available for samples, but we still want to have one to overwrite dead resources with.
+        // Null descriptors are not available for samplers, but we still want to have one to overwrite dead resources with.
         // So we create a default sampler that acts as the "null sampler".
         let sampler_ci = vk::SamplerCreateInfo::default();
         let null_sampler = unsafe {
@@ -366,7 +368,7 @@ impl Device {
                 requirements,
                 location: MemoryLocation::CpuToGpu,
                 linear: true,
-                allocation_scheme: AllocationScheme::GpuAllocatorManaged
+                allocation_scheme: AllocationScheme::DedicatedBuffer(buffer_device_address_buffer)
             }
         ).context("Allocator should allocate memory for buffer.")?;
 
@@ -459,6 +461,79 @@ impl Device {
 
 // Device usage methods
 impl Device {
+    pub fn create_memory(&self, info: MemoryBlockInfo) -> Result<MemoryBlock> {
+        debug_assert!(info.requirements.memory_type_bits != 0, "memory_type_bits must be non-zero!");
+
+        let allocation_info = AllocationCreateDesc {
+            name: info.name.as_ref(),
+            requirements: info.requirements,
+            location: MemoryLocation::GpuOnly,
+            linear: false,
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged
+        };
+        let allocation = self.0.allocator
+            .lock()
+            .unwrap()
+            .allocate(&allocation_info)
+            .context("Memory should be allocated.")?;
+
+        Ok(MemoryBlock::new(
+            self.clone(), 
+            info, 
+            allocation, 
+            allocation_info
+        ))
+    }
+
+    pub fn get_buffer_memory_requirements(&self, info: &BufferInfo) -> MemoryRequirements {
+        let usage_flags = 
+            vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS |
+            vk::BufferUsageFlags::TRANSFER_SRC |
+            vk::BufferUsageFlags::TRANSFER_DST |
+            vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER |
+            vk::BufferUsageFlags::STORAGE_TEXEL_BUFFER |
+            vk::BufferUsageFlags::UNIFORM_BUFFER |
+            vk::BufferUsageFlags::STORAGE_BUFFER |
+            vk::BufferUsageFlags::INDEX_BUFFER |
+            vk::BufferUsageFlags::VERTEX_BUFFER |
+            vk::BufferUsageFlags::INDIRECT_BUFFER |
+            vk::BufferUsageFlags::TRANSFORM_FEEDBACK_BUFFER_EXT |
+            vk::BufferUsageFlags::TRANSFORM_FEEDBACK_COUNTER_BUFFER_EXT |
+            vk::BufferUsageFlags::CONDITIONAL_RENDERING_EXT |
+            vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR |
+            vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR |
+            vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR;
+
+        let buffer_create_info = vk::BufferCreateInfo {
+            size: info.size.into(),
+            usage: usage_flags,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            queue_family_index_count: 1,
+            p_queue_family_indices: &self.0.main_queue_family,
+            ..Default::default()
+        };
+        let buffer_requirements_info = vk::DeviceBufferMemoryRequirements {
+            p_create_info: &buffer_create_info,
+            ..Default::default()
+        };
+        let mut memory_requirements = vk::MemoryRequirements2::default();
+        unsafe { self.0.logical_device.get_device_buffer_memory_requirements(&buffer_requirements_info, &mut memory_requirements) };
+
+        memory_requirements.memory_requirements
+    }
+
+    pub fn get_image_memory_requirements(&self, info: &ImageInfo) -> MemoryRequirements {
+        let image_create_info = initialize_image_create_info_from_image_info(info, &self.0.main_queue_family);
+        let image_requirements_info = vk::DeviceImageMemoryRequirements {
+            p_create_info: &image_create_info,
+            ..Default::default()
+        };
+        let mut memory_requirements = vk::MemoryRequirements2::default();
+        unsafe { self.0.logical_device.get_device_image_memory_requirements(&image_requirements_info, &mut memory_requirements) };
+
+        memory_requirements.memory_requirements
+    }
+
     #[inline]
     pub fn create_buffer(&self, info: BufferInfo) -> Result<BufferId> {
         self.0.new_buffer(info)
@@ -797,6 +872,45 @@ impl Device {
     }
 }
 
+fn initialize_image_create_info_from_image_info(image_info: &ImageInfo, queue_family_index: &u32) -> vk::ImageCreateInfo {
+    debug_assert!(image_info.sample_count.count_ones() == 1 && image_info.sample_count <= 64, "Image samples must be a power of two between 1 and 64 (inclusive)!");
+    debug_assert!(
+        image_info.size.width > 0 && image_info.size.height > 0 && image_info.size.depth > 0,
+        "Image dimensions (width, height, depth) must be greater than 0!"
+    );
+    debug_assert!(image_info.array_layer_count > 0, "Image array layer count must be greater than 0!");
+    debug_assert!(image_info.mip_level_count > 0, "Image mip level count must be greater than 0!");
+
+    let image_type = vk::ImageType::from_raw((image_info.dimensions - 1) as i32);
+
+    let mut image_create_flags = vk::ImageCreateFlags::default();
+
+    const CUBE_FACE_N: u32 = 6;
+    if image_info.dimensions == 2 && image_info.size.width == image_info.size.height && image_info.array_layer_count % CUBE_FACE_N == 0 {
+        image_create_flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE;
+    }
+    if image_info.dimensions == 3 {
+        // TODO(grundlett): Figure out if there are cases where a 3D image CAN'T be used
+        // as a 2D array image view.
+        image_create_flags |= vk::ImageCreateFlags::TYPE_2D_ARRAY_COMPATIBLE;
+    }
+
+    vk::ImageCreateInfo {
+        flags: image_create_flags,
+        format: image_info.format,
+        extent: image_info.size,
+        mip_levels: image_info.mip_level_count,
+        array_layers: image_info.array_layer_count,
+        samples: vk::SampleCountFlags::from_raw(image_info.sample_count),
+        tiling: vk::ImageTiling::OPTIMAL,
+        usage: image_info.usage,
+        sharing_mode: vk::SharingMode::EXCLUSIVE,
+        queue_family_index_count: 1,
+        p_queue_family_indices: queue_family_index,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        ..Default::default()
+    }
+}
 
 // Device internal methods
 impl DeviceInternal {
@@ -937,22 +1051,23 @@ impl DeviceInternal {
 
         ret.info = info.clone();
 
-        let usage_flags = vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                                          | vk::BufferUsageFlags::TRANSFER_SRC
-                                          | vk::BufferUsageFlags::TRANSFER_DST
-                                          | vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER
-                                          | vk::BufferUsageFlags::STORAGE_TEXEL_BUFFER
-                                          | vk::BufferUsageFlags::UNIFORM_BUFFER
-                                          | vk::BufferUsageFlags::STORAGE_BUFFER
-                                          | vk::BufferUsageFlags::INDEX_BUFFER
-                                          | vk::BufferUsageFlags::VERTEX_BUFFER
-                                          | vk::BufferUsageFlags::INDIRECT_BUFFER
-                                          | vk::BufferUsageFlags::TRANSFORM_FEEDBACK_BUFFER_EXT
-                                          | vk::BufferUsageFlags::TRANSFORM_FEEDBACK_COUNTER_BUFFER_EXT
-                                          | vk::BufferUsageFlags::CONDITIONAL_RENDERING_EXT
-                                          | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
-                                          | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR
-                                          | vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR;
+        let usage_flags = 
+            vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS |
+            vk::BufferUsageFlags::TRANSFER_SRC |
+            vk::BufferUsageFlags::TRANSFER_DST |
+            vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER |
+            vk::BufferUsageFlags::STORAGE_TEXEL_BUFFER |
+            vk::BufferUsageFlags::UNIFORM_BUFFER |
+            vk::BufferUsageFlags::STORAGE_BUFFER |
+            vk::BufferUsageFlags::INDEX_BUFFER |
+            vk::BufferUsageFlags::VERTEX_BUFFER |
+            vk::BufferUsageFlags::INDIRECT_BUFFER |
+            vk::BufferUsageFlags::TRANSFORM_FEEDBACK_BUFFER_EXT |
+            vk::BufferUsageFlags::TRANSFORM_FEEDBACK_COUNTER_BUFFER_EXT |
+            vk::BufferUsageFlags::CONDITIONAL_RENDERING_EXT |
+            vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR |
+            vk::BufferUsageFlags::ACCELERATION_STRUCTURE_STORAGE_KHR |
+            vk::BufferUsageFlags::SHADER_BINDING_TABLE_KHR;
 
         let buffer_ci = vk::BufferCreateInfo::builder()
             .size(info.size as vk::DeviceSize)
@@ -965,26 +1080,42 @@ impl DeviceInternal {
                 .context("Buffer should be created.")?
         };
 
-        let requirements = unsafe { self.logical_device.get_buffer_memory_requirements(ret.buffer) };
-        ret.allocation = self.allocator
-            .lock()
-            .unwrap()
-            .allocate(&AllocationCreateDesc {
-                name: info.debug_name.as_ref(),
-                requirements,
-                location: info.memory_location,
-                linear: true,
-                allocation_scheme: AllocationScheme::GpuAllocatorManaged
-            })
-            .context("Buffer memory should be allocated.")?;
+        match info.allocation_info {
+            AllocationInfo::Automatic(memory_location) => {
+                let requirements = unsafe { self.logical_device.get_buffer_memory_requirements(ret.buffer) };
+                
+                ret.allocation = self.allocator
+                    .lock()
+                    .unwrap()
+                    .allocate(&AllocationCreateDesc {
+                        name: info.debug_name.as_ref(),
+                        requirements,
+                        location: memory_location,
+                        linear: true,
+                        allocation_scheme: AllocationScheme::DedicatedBuffer(ret.buffer)
+                    })
+                    .context("Buffer memory should be allocated.")?;
 
-        unsafe {
-            self.logical_device.bind_buffer_memory(
-                ret.buffer,
-                ret.allocation.memory(),
-                ret.allocation.offset()
-            ).context("Device should bind buffer memory.")?
-        };
+                unsafe {
+                    self.logical_device.bind_buffer_memory(
+                        ret.buffer,
+                        ret.allocation.memory(),
+                        ret.allocation.offset()
+                    ).context("Device should bind buffer memory.")?
+                };
+            },
+            AllocationInfo::Manual { memory_block, offset } => {
+                // TODO(pahrens): Add validation for memory type requirements.
+
+                unsafe {
+                    self.logical_device.bind_buffer_memory(
+                        ret.buffer,
+                        memory_block.0.allocation.memory(),
+                        offset as vk::DeviceSize
+                    ).context("Device should bind buffer memory.")?
+                };
+            }
+        }
 
         let buffer_device_address_info = vk::BufferDeviceAddressInfo::builder()
             .buffer(ret.buffer);
@@ -1105,70 +1236,51 @@ impl DeviceInternal {
             ..Default::default()
         };
 
-        debug_assert!(info.dimensions >= 1 && info.dimensions <= 3, "Image dimensions must be 1, 2, or 3.");
-        debug_assert!(u32::count_ones(info.sample_count) == 1 && info.sample_count <= 64, "Image samples must be a power of two ranging from 1 to 64.");
-        debug_assert!(
-            info.size.width > 0 &&
-            info.size.height > 0 &&
-            info.size.depth > 0,
-            "Image size must be greater than 0 in each dimension."
-        );
-        debug_assert!(info.array_layer_count > 0, "Image array layer count must be greater than 0.");
-        debug_assert!(info.mip_level_count > 0, "Image mip level count must be greater than 0.");
+        let image_create_info = initialize_image_create_info_from_image_info(&info, &self.main_queue_family);
 
-        let image_type = vk::ImageType::from_raw((info.dimensions - 1) as i32);
+        match info.allocation_info {
+            AllocationInfo::Automatic(memory_location) => {
+                ret.image = unsafe {
+                    self.logical_device.create_image(&image_create_info, None)
+                        .context("Image should be created.")?
+                };
 
-        let mut image_create_flags = vk::ImageCreateFlags::empty();
+                let requirements = unsafe { self.logical_device.get_image_memory_requirements(ret.image) };
+                ret.allocation = self.allocator
+                    .lock()
+                    .unwrap()
+                    .allocate(&AllocationCreateDesc {
+                        name: info.debug_name.as_ref(),
+                        requirements,
+                        location: memory_location,
+                        linear: false,
+                        allocation_scheme: AllocationScheme::DedicatedImage(ret.image)
+                    })
+                    .context("Image memory should be allocated.")?;
 
-        const CUBE_FACE_N: u32 = 6u32;
-        if info.dimensions == 2 && info.size.width == info.size.height && info.array_layer_count % CUBE_FACE_N == 0 {
-            image_create_flags |= vk::ImageCreateFlags::CUBE_COMPATIBLE;
+                unsafe {
+                    self.logical_device.bind_image_memory(
+                        ret.image,
+                        ret.allocation.memory(),
+                        ret.allocation.offset()
+                    ).context("Device should bind image memory.")?
+                };
+            },
+            AllocationInfo::Manual { memory_block, offset } => {
+                ret.image = unsafe {
+                    self.logical_device.create_image(&image_create_info, None)
+                        .context("Image should be created.")?
+                };
+
+                unsafe {
+                    self.logical_device.bind_image_memory(
+                        ret.image,
+                        memory_block.0.allocation.memory(),
+                        offset as vk::DeviceSize
+                    ).context("Device should bind image memory.")?
+                };
+            }
         }
-        if info.dimensions == 3 {
-            // TODO(grundlett): Figure out if there are cases where a 3D image CAN'T be used
-            // as a 2D array image view.
-            image_create_flags |= vk::ImageCreateFlags::TYPE_2D_ARRAY_COMPATIBLE;
-        }
-
-        let image_ci = vk::ImageCreateInfo::builder()
-            .flags(image_create_flags)
-            .image_type(image_type)
-            .format(info.format)
-            .extent(info.size)
-            .mip_levels(info.mip_level_count)
-            .array_layers(info.array_layer_count)
-            .samples(vk::SampleCountFlags::from_raw(info.sample_count))
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .usage(info.usage)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .queue_family_indices(slice::from_ref(&self.main_queue_family))
-            .initial_layout(vk::ImageLayout::UNDEFINED);
-
-        ret.image = unsafe {
-            self.logical_device.create_image(&image_ci, None)
-                .context("Image should be created.")?
-        };
-
-        let requirements = unsafe { self.logical_device.get_image_memory_requirements(ret.image) };
-        ret.allocation = self.allocator
-            .lock()
-            .unwrap()
-            .allocate(&AllocationCreateDesc {
-                name: info.debug_name.as_ref(),
-                requirements,
-                location: info.memory_flags,
-                linear: false,
-                allocation_scheme: AllocationScheme::GpuAllocatorManaged
-            })
-            .context("Image memory should be allocated.")?;
-
-        unsafe {
-            self.logical_device.bind_image_memory(
-                ret.image,
-                ret.allocation.memory(),
-                ret.allocation.offset()
-            ).context("Device should bind image memory.")?
-        };
 
         let image_view_type = if info.array_layer_count > 1 {
             debug_assert!((1..2).contains(&info.dimensions), "Image dimensions must be 1 or 2 for image arrays.");

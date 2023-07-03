@@ -4,6 +4,7 @@ pub mod context;
 pub mod device;
 pub mod command_list;
 pub mod gpu_resources;
+pub mod memory_block;
 pub mod semaphore;
 pub mod timeline_query;
 pub mod split_barrier;
