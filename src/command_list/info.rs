@@ -368,9 +368,24 @@ pub struct ResetTimestampsInfo {
 }
 
 
+pub struct CommandLabelInfo {
+    pub label_name: Cow<'static, str>,
+    pub label_color: [f32; 4]
+}
+
+impl Default for CommandLabelInfo {
+    fn default() -> Self {
+        Self {
+            label_name: "".into(),
+            label_color: [0.463, 0.333, 0.671, 1.0]
+        }
+    }
+}
+
+
 pub struct ResetSplitBarrierInfo {
     pub barrier: SplitBarrierState,
-    pub stage: vk::PipelineStageFlags
+    pub stage: vk::PipelineStageFlags2
 }
 
 

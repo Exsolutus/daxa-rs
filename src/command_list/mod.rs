@@ -15,7 +15,7 @@ use crate::{
     pipeline::*
 };
 use anyhow::{Result, bail};
-use ash::vk;
+use ash::vk::{self, Handle};
 use std::{
     ffi::{
         CStr
@@ -422,20 +422,152 @@ impl CommandList {
         internal.image_barrier_batch_count += 1;
     }
 
-    pub fn signal_split_barrier(&self, info: SplitBarrierSignalInfo) {
-        todo!()
+    pub fn wait_split_barriers(&mut self, infos: &[SplitBarrierWaitInfo]) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        // TODO: thread locals?
+        #[derive(Default)]
+        struct SplitBarrierDependencyInfoBuffer {
+            image_memory_barriers: Vec<vk::ImageMemoryBarrier2>,
+            memory_barriers: Vec<vk::MemoryBarrier2>
+        }
+        let mut split_barrier_dependency_infos_aux_buffer: Vec<SplitBarrierDependencyInfoBuffer> = vec![];
+        let mut split_barrier_dependency_infos_buffer = vec![];
+        let mut split_barrier_events_buffer = vec![];
+
+        internal.flush_barriers();
+        for end_info in infos {
+            split_barrier_dependency_infos_aux_buffer.push(SplitBarrierDependencyInfoBuffer::default());
+            let dependency_info_aux_buffer = split_barrier_dependency_infos_aux_buffer.last_mut().unwrap();
+            for image_barrier in end_info.image_barriers.iter() {
+                dependency_info_aux_buffer.image_memory_barriers.push(vk::ImageMemoryBarrier2 {
+                    src_stage_mask: image_barrier.src_access.0,
+                    src_access_mask: image_barrier.src_access.1,
+                    dst_stage_mask: image_barrier.dst_access.0,
+                    dst_access_mask: image_barrier.dst_access.1,
+                    old_layout: image_barrier.src_layout,
+                    new_layout: image_barrier.dst_layout,
+                    src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                    image: internal.device.0.image_slot(image_barrier.image).image,
+                    subresource_range: image_barrier.range,
+                    ..Default::default()
+                });
+            }
+            for memory_barrier in end_info.memory_barriers.iter() {
+                dependency_info_aux_buffer.memory_barriers.push(vk::MemoryBarrier2 {
+                    src_stage_mask: memory_barrier.src_access.0,
+                    src_access_mask: memory_barrier.src_access.1,
+                    dst_stage_mask: memory_barrier.dst_access.0,
+                    dst_access_mask: memory_barrier.dst_access.1,
+                    ..Default::default()
+                });
+            }
+            split_barrier_dependency_infos_buffer.push(vk::DependencyInfo {
+                memory_barrier_count: dependency_info_aux_buffer.memory_barriers.len() as u32,
+                p_memory_barriers: dependency_info_aux_buffer.memory_barriers.as_ptr(),
+                image_memory_barrier_count: dependency_info_aux_buffer.image_memory_barriers.len() as u32,
+                p_image_memory_barriers: dependency_info_aux_buffer.image_memory_barriers.as_ptr(),
+                ..Default::default()
+            });
+            split_barrier_events_buffer.push(vk::Event::from_raw(end_info.split_barrier.data));
+        }
+        unsafe {internal.device.0.logical_device.cmd_wait_events2(
+            internal.command_buffer, 
+            &split_barrier_events_buffer, 
+            &split_barrier_dependency_infos_buffer
+        )};
+
+        split_barrier_dependency_infos_aux_buffer.clear();
+        split_barrier_dependency_infos_buffer.clear();
+        split_barrier_events_buffer.clear();
     }
 
-    pub fn wait_split_barriers(&self, infos: &[SplitBarrierWaitInfo]) {
-        todo!()
+    pub fn wait_split_barrier(&mut self, info: SplitBarrierWaitInfo) {
+        self.wait_split_barriers(&[info]);
     }
 
-    pub fn wait_split_barrier(&self, info: SplitBarrierWaitInfo) {
-        todo!()
+    pub fn signal_split_barrier(&mut self, info: SplitBarrierSignalInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        // TODO: thread locals?
+        #[derive(Default)]
+        struct SplitBarrierDependencyInfoBuffer {
+            image_memory_barriers: Vec<vk::ImageMemoryBarrier2>,
+            memory_barriers: Vec<vk::MemoryBarrier2>
+        }
+        let mut split_barrier_dependency_info_aux_buffer: Vec<SplitBarrierDependencyInfoBuffer> = vec![];
+        // let mut split_barrier_dependency_info_buffer = vec![];
+        // let mut split_barrier_events_buffer = vec![];
+
+        internal.flush_barriers();
+
+        split_barrier_dependency_info_aux_buffer.push(Default::default());
+        let dependency_info_aux_buffer = split_barrier_dependency_info_aux_buffer.last_mut().unwrap();
+
+        for image_barrier in info.image_barriers.iter() {
+            dependency_info_aux_buffer.image_memory_barriers.push(vk::ImageMemoryBarrier2 {
+                src_stage_mask: image_barrier.src_access.0,
+                src_access_mask: image_barrier.src_access.1,
+                dst_stage_mask: image_barrier.dst_access.0,
+                dst_access_mask: image_barrier.dst_access.1,
+                old_layout: image_barrier.src_layout,
+                new_layout: image_barrier.dst_layout,
+                src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                image: internal.device.0.image_slot(image_barrier.image).image,
+                subresource_range: image_barrier.range,
+                ..Default::default()
+            })
+        }
+        for memory_barrier in info.memory_barriers.iter() {
+            dependency_info_aux_buffer.memory_barriers.push(vk::MemoryBarrier2 {
+                src_stage_mask: memory_barrier.src_access.0,
+                src_access_mask: memory_barrier.src_access.1,
+                dst_stage_mask: memory_barrier.dst_access.0,
+                dst_access_mask: memory_barrier.dst_access.1,
+                ..Default::default()
+            });
+        }
+
+        let dependency_info = vk::DependencyInfo {
+            memory_barrier_count: dependency_info_aux_buffer.memory_barriers.len() as u32,
+            p_memory_barriers: dependency_info_aux_buffer.memory_barriers.as_ptr(),
+            image_memory_barrier_count: dependency_info_aux_buffer.image_memory_barriers.len() as u32,
+            p_image_memory_barriers: dependency_info_aux_buffer.image_memory_barriers.as_ptr(),
+            ..Default::default()
+        };
+        unsafe { internal.device.0.logical_device.cmd_set_event2(
+            internal.command_buffer,
+            vk::Event::from_raw(info.split_barrier.data),
+            &dependency_info
+        ) };
+        split_barrier_dependency_info_aux_buffer.clear();
     }
 
-    pub fn reset_split_barrier(&self, info: ResetSplitBarrierInfo) {
-        todo!()
+    pub fn reset_split_barrier(&mut self, info: ResetSplitBarrierInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+        internal.flush_barriers();
+        unsafe { internal.device.0.logical_device.cmd_reset_event2(
+            internal.command_buffer,
+            vk::Event::from_raw(info.barrier.data),
+            info.stage
+        ) };
     }
 
 
@@ -881,6 +1013,35 @@ impl CommandList {
             info.start_index,
             info.count)
         };
+    }
+
+    pub fn begin_label(&mut self, info: CommandLabelInfo) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+        let debug_label_info = vk::DebugUtilsLabelEXT {
+            p_label_name: info.label_name.as_ptr() as *const i8,
+            color: info.label_color,
+            ..Default::default()
+        };
+        unsafe { internal.device.0.context.debug_utils().cmd_begin_debug_utils_label(internal.command_buffer, &debug_label_info) };
+    }
+
+    pub fn end_label(&mut self) {
+        let CommandListState::Recording(internal) = &mut self.0 else {
+            #[cfg(debug_assertions)]
+            panic!("Can't record commands on a completed command list.");
+            #[cfg(not(debug_assertions))]
+            unreachable!();
+        };
+
+        internal.flush_barriers();
+        unsafe { internal.device.0.context.debug_utils().cmd_end_debug_utils_label(internal.command_buffer); }
     }
 
 
