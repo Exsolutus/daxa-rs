@@ -34,7 +34,7 @@ fn simplest() {
     // Command lists must be completed before submission!
     let command_list = command_list.complete();
 
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list],
         ..Default::default()
     })
@@ -78,7 +78,7 @@ fn deferred_destruction() {
     let command_list = command_list.complete();
 
     // Even after this call the resources will still be alive, as zombie resources are not checked to be dead in submit calls.
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list],
         ..Default::default()
     });
@@ -287,7 +287,7 @@ fn copy() {
 
     let command_list = command_list.complete();
 
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list],
         ..Default::default()
     });

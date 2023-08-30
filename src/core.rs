@@ -36,6 +36,7 @@ pub(crate) trait Slot {
 }
 
 pub trait Set {
+    fn equals(&self, other: vk::ImageSubresourceRange) -> bool;
     fn contains(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersects(&self, other: vk::ImageSubresourceRange) -> bool;
     fn intersect(&self, other: vk::ImageSubresourceRange) -> vk::ImageSubresourceRange;
@@ -43,6 +44,15 @@ pub trait Set {
 }
 
 impl Set for vk::ImageSubresourceRange {
+    #[inline]
+    fn equals(&self, other: vk::ImageSubresourceRange) -> bool {
+        self.aspect_mask == other.aspect_mask
+        && self.base_mip_level == other.base_mip_level
+        && self.level_count == other.level_count
+        && self.base_array_layer == other.base_array_layer
+        && self.layer_count == other.layer_count
+    }
+
     #[inline]
     fn contains(&self, other: vk::ImageSubresourceRange) -> bool {
         let a_mip_p0 = self.base_mip_level;

@@ -58,12 +58,14 @@ impl MemoryBlock {
     }
 }
 
-impl Drop for MemoryBlock {
+impl Drop for MemoryBlockInternal {
     fn drop(&mut self) {
-        // self.device.0.allocator
-        //     .get_mut()
-        //     .unwrap()
-        //     .free(self.allocation);
+        let allocation = std::mem::take(&mut self.allocation);
+        self.device.0.allocator
+            .lock()
+            .unwrap()
+            .free(allocation)
+            .unwrap();
     }
 }
 

@@ -39,13 +39,13 @@ fn binary_semaphore() {
 
     // This semaphore is useful in the future, it can be used to make submits wait on each other,
     // or to make a present wait for a submit to finish
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list1],
         signal_binary_semaphores: vec![binary_semaphore1.clone()],
         ..Default::default()
     });
     
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list2],
         wait_binary_semaphores: vec![binary_semaphore1.clone()],
         signal_binary_semaphores: vec![binary_semaphore2.clone()],
@@ -53,14 +53,14 @@ fn binary_semaphore() {
     });
     
     // Binary semaphores can be reused ONLY after they have been signaled.
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list3],
         wait_binary_semaphores: vec![binary_semaphore2.clone()],
         signal_binary_semaphores: vec![binary_semaphore1.clone()],
         ..Default::default()
     });
     
-    app.device.submit_commands(CommandSubmitInfo {
+    app.device.submit_commands(&CommandSubmitInfo {
         command_lists: vec![command_list4],
         wait_binary_semaphores: vec![binary_semaphore1.clone()],
         ..Default::default()

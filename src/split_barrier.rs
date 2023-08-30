@@ -13,13 +13,13 @@ use std::{
 
 
 
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub struct MemoryBarrierInfo {
     pub src_access: Access,
     pub dst_access: Access
 }
 
-
+#[derive(Clone, Debug)]
 pub struct ImageBarrierInfo {
     pub src_access: Access,
     pub dst_access: Access,
@@ -54,13 +54,13 @@ pub struct SplitBarrierInfo {
     pub debug_name: Cow<'static, str>
 }
 
-pub struct SplitBarrierSignalInfo<'a> {
-    pub memory_barriers: &'a [MemoryBarrierInfo],
-    pub image_barriers: &'a [ImageBarrierInfo],
+pub struct SplitBarrierSignalInfo {
+    pub memory_barriers: Box<[MemoryBarrierInfo]>,
+    pub image_barriers: Box<[ImageBarrierInfo]>,
     pub split_barrier: SplitBarrierState
 }
 
-pub type SplitBarrierWaitInfo<'a> = SplitBarrierSignalInfo<'a>;
+pub type SplitBarrierWaitInfo = SplitBarrierSignalInfo;
 
 
 
@@ -73,8 +73,8 @@ pub(crate) struct SplitBarrierZombie {
 #[derive(Clone)]
 pub struct SplitBarrierState {
     device: Device,
-    info: SplitBarrierInfo,
-    data: u64
+    pub(crate) info: SplitBarrierInfo,
+    pub(crate) data: u64
 }
 
 // SplitBarrierState creation methods

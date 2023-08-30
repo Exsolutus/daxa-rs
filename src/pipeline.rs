@@ -28,7 +28,8 @@ pub use vk::{
     PipelineColorBlendAttachmentState,
     BlendFactor,
     BlendOp,
-    ColorComponentFlags
+    ColorComponentFlags,
+    PipelineStageFlags
 };
 #[cfg(feature = "conservative_rasterization")]
 pub use vk::{

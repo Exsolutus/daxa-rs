@@ -52,6 +52,7 @@ pub use ash::vk::{
 
 
 
+
 pub type DeviceSelector = fn(&DeviceProperties) -> i32;
 
 pub fn default_device_selector(device_properties: &DeviceProperties) -> i32 {
@@ -722,7 +723,7 @@ impl Device {
     }
 
 
-    pub fn submit_commands(&self, info: CommandSubmitInfo){
+    pub fn submit_commands(&self, info: &CommandSubmitInfo){
         let internal = self.0.as_ref();
         
         self.collect_garbage();
@@ -765,12 +766,12 @@ impl Device {
         let mut submit_semaphore_signals = vec![internal.main_queue_gpu_timeline_semaphore]; // All timeline semaphores come first, then binary semaphores follow.
         let mut submit_semaphore_signal_values = vec![timeline_value]; // Used for timeline semaphores. Ignored (push dummy value) for binary semaphores.
 
-        for (timeline_semaphore, signal_value) in info.signal_timeline_semaphores {
+        for (timeline_semaphore, signal_value) in &info.signal_timeline_semaphores {
             submit_semaphore_signals.push(timeline_semaphore.0.semaphore);
-            submit_semaphore_signal_values.push(signal_value);
+            submit_semaphore_signal_values.push(*signal_value);
         }
 
-        for binary_semaphore in info.signal_binary_semaphores {
+        for binary_semaphore in &info.signal_binary_semaphores {
             submit_semaphore_signals.push(binary_semaphore.0.semaphore);
             submit_semaphore_signal_values.push(0); // The vulkan spec requires to have dummy values for binary semaphores.
         }
@@ -781,13 +782,13 @@ impl Device {
         let mut submit_semaphore_wait_stage_masks = vec![];
         let mut submit_semaphore_wait_values = vec![];
 
-        for (timeline_semaphore, wait_value) in info.wait_timeline_semaphores {
+        for (timeline_semaphore, wait_value) in &info.wait_timeline_semaphores {
             submit_semaphore_waits.push(timeline_semaphore.0.semaphore);
             submit_semaphore_wait_stage_masks.push(vk::PipelineStageFlags::ALL_COMMANDS);
-            submit_semaphore_wait_values.push(wait_value);
+            submit_semaphore_wait_values.push(*wait_value);
         }
 
-        for binary_semaphore in info.wait_binary_semaphores {
+        for binary_semaphore in &info.wait_binary_semaphores {
             submit_semaphore_waits.push(binary_semaphore.0.semaphore);
             submit_semaphore_wait_stage_masks.push(vk::PipelineStageFlags::ALL_COMMANDS);
             submit_semaphore_wait_values.push(0);
@@ -897,6 +898,7 @@ fn initialize_image_create_info_from_image_info(image_info: &ImageInfo, queue_fa
 
     vk::ImageCreateInfo {
         flags: image_create_flags,
+        image_type,
         format: image_info.format,
         extent: image_info.size,
         mip_levels: image_info.mip_level_count,
@@ -1283,7 +1285,7 @@ impl DeviceInternal {
         }
 
         let image_view_type = if info.array_layer_count > 1 {
-            debug_assert!((1..2).contains(&info.dimensions), "Image dimensions must be 1 or 2 for image arrays.");
+            debug_assert!((1..3).contains(&info.dimensions), "Image dimensions must be 1 or 2 for image arrays.");
             vk::ImageViewType::from_raw((info.dimensions + 3) as i32)
         } else {
             vk::ImageViewType::from_raw((info.dimensions - 1) as i32)

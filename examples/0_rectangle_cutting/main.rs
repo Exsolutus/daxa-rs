@@ -381,7 +381,7 @@ impl App {
 
         let command_list = command_list.complete();
 
-        device.submit_commands(daxa_rs::device::CommandSubmitInfo {
+        device.submit_commands(&daxa_rs::device::CommandSubmitInfo {
             command_lists: vec![command_list],
             wait_binary_semaphores: vec![swapchain.get_acquire_semaphore()],
             signal_binary_semaphores: vec![swapchain.get_present_semaphore()],

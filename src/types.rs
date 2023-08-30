@@ -1,21 +1,32 @@
 use ash::vk;
 
+use std::ops::BitOr;
+
 // reexport
 pub use {
     vk::Rect2D,
     vk::Offset2D,
     vk::Extent2D,
     vk::Extent3D,
-    vk::Viewport
+    vk::Viewport,
+    vk::ImageSubresourceRange
 };
 
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Access(pub(crate) vk::PipelineStageFlags2, pub(crate) vk::AccessFlags2);
 
 impl Default for Access {
     fn default() -> Self {
         access_consts::NONE
+    }
+}
+
+impl BitOr for Access {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0, self.1 | rhs.1)
     }
 }
 
@@ -34,5 +45,6 @@ pub mod access_consts {
     pub const HOST_WRITE: Access = Access(vk::PipelineStageFlags2::HOST, vk::AccessFlags2::MEMORY_WRITE);
     
     const ACCESS_READ_WRITE: vk::AccessFlags2 = vk::AccessFlags2::from_raw(0b1000_0000_0000_0000 | 0b1_0000_0000_0000_0000);
+    pub const TRANSFER_READ_WRITE: Access = Access(vk::PipelineStageFlags2::TRANSFER, ACCESS_READ_WRITE);
     pub const ALL_GRAPHICS_READ_WRITE: Access = Access(vk::PipelineStageFlags2::ALL_GRAPHICS, ACCESS_READ_WRITE);
 }
