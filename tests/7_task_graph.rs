@@ -31,12 +31,14 @@ fn execution() {
         task: |interface| {
             println!("Hello, ");
         },
+        name: format!("{} Task 1 (execution)", APPNAME_PREFIX).into(),
         ..Default::default()
     });
     task_graph.add_task_inline(InlineTaskInfo {
         task: |interface| {
             println!("World!");
         },
+        name: format!("{} Task 2 (execution)", APPNAME_PREFIX).into(),
         ..Default::default()
     });
 
@@ -62,7 +64,7 @@ fn write_read_image() {
     // CREATE image
     let task_image = task_graph.create_transient_image(TaskTransientImageInfo {
         size: daxa_rs::types::Extent3D { width: 1, height: 1, depth: 1 },
-        name: "Task Graph tested image".into(),
+        name: "TaskGraph tested image".into(),
         ..Default::default()
     });
     // WRITE image
@@ -77,6 +79,7 @@ fn write_read_image() {
                 )
             ].into()
         ),
+        name: format!("{} Write image 1", APPNAME_PREFIX).into(),
         ..Default::default()
     });
     // READ image
@@ -91,6 +94,7 @@ fn write_read_image() {
                 )
             ].into()
         ),
+        name: format!("{} Read image 1", APPNAME_PREFIX).into(),
         ..Default::default()
     });
 
@@ -106,8 +110,6 @@ fn write_read_image_layer() {
     //  2) WRITE into array layer 1 of the image
     //  3) READ from array layer 2 of the image
     let app = AppContext::new();
-    // Need to scope the task graph lifetime.
-    // Task graph MUST drop before we call wait_idle and collect_garbage.
     let mut task_graph = TaskGraph::new(app.device.clone(), TaskGraphInfo {
         debug_name: format!("{} create-write-read image array layer", APPNAME_PREFIX).into(),
         record_debug_information: true,
@@ -117,7 +119,7 @@ fn write_read_image_layer() {
     let task_image = task_graph.create_transient_image(TaskTransientImageInfo {
         size: daxa_rs::types::Extent3D { width: 1, height: 1, depth: 1 },
         array_layer_count: 2,
-        name: "Task Graph tested image".into(),
+        name: "TaskGraph tested image".into(),
         ..Default::default()
     });
     // WRITE into array layer 1 of the image
@@ -138,6 +140,7 @@ fn write_read_image_layer() {
                 )
             ].into()
         ),
+        name: format!("{} Write image array layer 1", APPNAME_PREFIX).into(),
         ..Default::default()
     });
     // READ from array layer 2 of the image
@@ -158,6 +161,58 @@ fn write_read_image_layer() {
                 )
             ].into()
         ),
+        name: format!("{} Read image array layer 1", APPNAME_PREFIX).into(),
+        ..Default::default()
+    });
+
+    task_graph.complete(&TaskCompleteInfo::default());
+    task_graph.execute(&ExecutionInfo::default());
+    println!("{}", task_graph.get_debug_string());
+}
+
+#[test]
+fn create_transfer_read_buffer() {
+    // TEST:
+    //  1) CREATE buffer
+    //  2) TRANSFER into the buffer
+    //  3) READ from the buffer
+    let app = AppContext::new();
+    let mut task_graph = TaskGraph::new(app.device.clone(), TaskGraphInfo {
+        debug_name: format!("{} create-transfer-read image array layer", APPNAME_PREFIX).into(),
+        record_debug_information: true,
+        ..Default::default()
+    }).unwrap();
+    // CREATE buffer
+    let task_buffer = task_graph.create_transient_buffer(TaskTransientBufferInfo { 
+        size: std::mem::size_of::<u32>() as u32, 
+        name: "TaskGraph tested buffer".into() 
+    });
+    // TRANSFER into the buffer
+    task_graph.add_task_inline(InlineTaskInfo {
+        uses: (
+            [
+                TaskBufferUse::new(
+                    task_buffer, 
+                    TaskBufferAccess::HostTransferWrite
+                )
+            ].into(), 
+            [].into()
+        ),
+        name: format!("{} Host transfer buffer", APPNAME_PREFIX).into(),
+        ..Default::default()
+    });
+    // READ from the buffer
+    task_graph.add_task_inline(InlineTaskInfo { 
+        uses: (
+            [
+                TaskBufferUse::new(
+                    task_buffer, 
+                    TaskBufferAccess::ComputeShaderRead
+                )
+            ].into(),
+            [].into()
+        ), 
+        name: format!("{} Read buffer", APPNAME_PREFIX).into(),
         ..Default::default()
     });
 

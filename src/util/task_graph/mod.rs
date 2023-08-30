@@ -92,6 +92,7 @@ impl<'a> TaskInterface<'a> {
 
 pub type TaskCallback = fn(&TaskInterface);
 
+#[derive(Clone)]
 pub struct TaskTransientBufferInfo {
     pub size: u32,
     pub name: String
@@ -496,7 +497,28 @@ impl TaskGraph {
     }
 
     pub fn create_transient_buffer(&mut self, info: TaskTransientBufferInfo) -> TaskBufferHandle {
-        todo!()
+        debug_assert!(!self.compiled, "Can't create resources on a completed task graph!");
+        debug_assert!(!self.buffer_name_to_id.contains_key(&info.name), "Task buffer names must be unique!");
+
+        let task_buffer_id = TaskBufferHandle::Transient { 
+            task_graph_index: self.unique_index, 
+            index:  self.global_buffer_infos.len() as u32
+        };
+
+        for permutation in self.permutations.iter_mut() {
+            permutation.buffer_infos.push(PerPermTaskBuffer { 
+                valid: permutation.active,
+                ..Default::default()
+            })
+        }
+
+        self.global_buffer_infos.push(PermIndepTaskBufferInfo::Transient {
+            info: info.clone(), 
+            memory_requirements: Default::default() 
+        });
+        self.buffer_name_to_id.insert(info.name, task_buffer_id);
+
+        task_buffer_id
     }
 
     pub fn create_transient_image(&mut self, info: TaskTransientImageInfo) -> TaskImageHandle {
@@ -1194,7 +1216,7 @@ mod internal {
     };
     use std::{
         sync::atomic::AtomicU32,
-        collections::HashMap,
+        collections::HashMap, default,
     };
 
 
@@ -1205,8 +1227,9 @@ mod internal {
     pub(super) type TaskId = usize;
     
 
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Default)]
     pub(super) enum LastReadIndex {
+        #[default]
         None,
         Barrier(usize),
         SplitBarrier(usize)
@@ -1234,6 +1257,7 @@ mod internal {
         pub last_use: CombinedBatchIndex
     }
     
+    #[derive(Default)]
     pub(super) struct PerPermTaskBuffer {
         /// Every permutation always has all buffers but they are not necessarily valid in that permutation.
         /// This boolean is used to check this.
